@@ -1,6 +1,134 @@
-# Production Hub v5.8 — Development Log
+# Production Hub v6.0 — Development Log
 
 This is the durable, plain-language record of work on the local Production Hub prototype.
+
+## 16 September 2026 (3) — The production moves to the top bar, and the suggestions learn what you actually open
+
+### What changed
+
+- **Productions left the rail for a dropdown in the top bar**, and that dropdown IS the title.
+  The take's name rides beside it as a tag and follows the selection.
+- **Production settings became a modal**, opened by a cog at the far right of the top bar.
+  There is no settings panel any more.
+- **Restart is gone**; the person you are signed in as sits in its place, avatar and name,
+  and clicking it switches member.
+- **The panel picker is a categorised nav with icons** — Blender's editor menu, not a
+  40-row dropdown — and the current panel is unmistakable in it.
+- **AID3N's suggestions rank on recency and habit**, and say why.
+
+### Why
+
+**Three things were claiming to be the title.** The rail said the production, the top bar
+said the production, and the sub-line said the take. Two of them were decoration. So the
+dropdown became the title: it is the largest type in the bar, it names the production, and
+opening it reveals every production including the demo — which had been unreachable from
+the UI, because nothing in the rail ever offered it.
+
+The rail is for the take and the tasks. A production is not a sibling of a task, and
+stacking them made it look like one.
+
+**Settings was a panel, and a panel is the wrong shape for it.** Panels tile — two can be
+open at once, each can be half a column wide, and a settings form at 240px is a form nobody
+completes. It takes over the screen now, which is also what makes the destructive action
+safe to show: DELETE PRODUCTION sits in its own bordered box, owner-only, and the Save and
+Cancel buttons are on their own line at the end, nowhere near it. A Save that shares a line
+with a Delete is a mis-click waiting for a bad afternoon.
+
+**Suggestions were suggesting nothing.** The strip ranked on a bare open-count, which on a
+fresh install is all zeros — so it offered whatever sorted first. It now separates two
+signals that were being conflated:
+
+- **Recency**, on a 45-minute half-life. The panel you closed ten minutes ago is the one
+  you most likely want back, however rarely you use it in general.
+- **Habit**, the open-count normalised against your most-opened panel.
+
+And it starts with an opinion rather than nothing: Scene Study, Sequencing Timeline, Sketch
+Pad, Content Bin, Cost and the Production Log carry a baseline weight, because those six are
+what this tool is for — draw it, see it, cut to it, price it, read what changed. They are not
+a hardcoded menu; the first time your own habit disagrees, habit wins. Open panels are never
+suggested, since offering what you are already looking at is noise.
+
+**The header failed contrast outright.** `AID3N SUGGESTS` was set in the accent purple on the
+raised surface at 8px — **2.45:1**, against a 4.5:1 floor. The accent moved to the icon, where
+3:1 is the bar and where it still does the job of marking the row as the agent's; the words
+took a real text colour. Measured after: header **7.1:1** at 9px, reason text **7.67:1** at
+10.5px.
+
+
+## 16 September 2026 (2) — A production log that can undo, a baseline everyone agrees on, and who is allowed
+
+### What changed
+
+- **The Production Log** — a vertical timeline, newest at the top, of every change anyone
+  made: who, when, what it was before, what it is now.
+- **Selecting an earlier change undoes back to it.** Later changes dim rather than vanish;
+  carrying on from there forks, and the fork is drawn.
+- **Changes that matter are flagged**, and only those: cost, stage dimensions, rigging.
+- **Every panel carries a pastel alert band** naming the changes that affect it.
+- **A take can be made the baseline** — the agreed reference — with a modal that notifies
+  the members and a notice that appears in the other takes.
+- **Roles are real**: owner, admin, editor, commentator, viewer, ranked and enforced.
+- **The log exports**, as CSV or Markdown.
+
+### Why
+
+**The meeting's hardest question was how a change announces its consequences**, and the
+tempting answer — a dependency graph between panels — is the one that rots. Every new panel
+would owe edges to every existing one, and a missing edge is a silent wrong answer.
+
+So nothing is stored. The numbers that matter are already derived from the take, so the
+implications of a change are found by **deriving them twice** — once against the take as it
+was, once as it is — and diffing. A panel that computes a figure is automatically wired into
+the impact engine by the act of computing it, and a panel that computes nothing costs nothing.
+Add a derivation and it participates; no edges to maintain.
+
+**Undo had to survive structural change**, not just value change. A diff-and-replay undo
+breaks the moment the thing being replayed onto no longer exists — you cannot re-apply "move
+LED 3" to a take where LED 3 was deleted two changes ago. Each entry therefore carries a
+snapshot of the whole take, and going back is a restore, not a rewind. Cheap, because a take
+is small, and correct under any edit.
+
+**The log was drowning in its own honesty.** Dragging a stage across the floor produced forty
+rows — every frame of the drag, each one a "change". Continuous input is now coalesced: the
+row is written when the gesture ends, with the coordinates it ended at. Forty rows became one,
+and it records the number of interactions alongside the final value, so the fact that you
+fiddled with it is not lost either.
+
+**"Everything is an implication" is the same as "nothing is."** Renaming a shape is not news.
+Only material facts raise the alert accent — money, the dimensions of the stage, the rig — and
+everything else records quietly.
+
+**Names became avatars.** A name set as a tag reads as metadata; a face reads as a person, which
+is what a global team needs from a log that six people are writing to at once.
+
+
+## 16 September 2026 — 13,657 lines become a shell and twenty modules
+
+### What changed
+
+- **`HUB_5.9.html` is retired.** `HUB_6.html` is a 2,700-line shell — styles, the icon sprite,
+  the root template — and everything else moved into `hub/`: `core.js`, `hub/history.js`, and
+  twelve panel modules under `hub/panels/`.
+- **Native ES modules, still no build step.** `serve.py` serves them; the browser links them.
+- **`hub/check.mjs`** fails the build if a panel uses a name `core.js` declares but does not
+  export.
+
+### Why
+
+**The single file had stopped being editable.** 13,657 lines in one document means every change
+re-reads the whole thing, two people cannot touch two panels at once, and an editor's outline is
+useless. The split is by what a thing is — the model, the layout engine, the bridge, then panels
+grouped by department — not by language, so a panel's markup, styles and logic stay together.
+
+**Nothing was to be lost or redesigned in the move**, and that was the hard part. The layout
+engine, the `postMessage` bridge to the six iframe tools, the derived figures and all fifty
+panels came across unchanged; the split is a relocation, not a rewrite.
+
+Two lessons paid for in bugs. A comment above a function belongs to that function, and walking
+backwards to collect it will happily eat the end of the previous one — the walkback is now
+floor-bounded. And `export { a, b }` written for a file that later grew a second declarator on
+one line silently stops exporting one of them, which surfaces as `undefined` in a panel at
+runtime and nowhere else; `check.mjs` exists so it surfaces at the command line instead.
 
 ## 7 September 2026 (4) — The canvas the room forgot, and the tile that never reached the invoice
 

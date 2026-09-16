@@ -5,8 +5,8 @@ nobody but the model: a function of (scene snapshot + images + conversation) →
 plan. The contract is `../AGENT-BRIDGE.md`.
 
 Run:
-    5.9/agent/.venv/bin/python -m uvicorn serve:app --host 127.0.0.1 --port 3902 \
-        --app-dir 5.9/agent --reload
+    6.0/agent/.venv/bin/python -m uvicorn serve:app --host 127.0.0.1 --port 3902 \
+        --app-dir 6.0/agent --reload
 
 Which interpreter answers is decided in `interpreter()` below and reported by
 `/health`: the real agent when a credential exists, and the deterministic stub

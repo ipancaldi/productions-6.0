@@ -38,7 +38,7 @@ pipeline with one more stage bolted to the end of it.
 | [agent/native/frames2mp4.swift](agent/native/frames2mp4.swift) | The AVFoundation encoder, compiled on first use and cached |
 | [agent/serve.py](agent/serve.py) | `POST /v1/image`, `GET /v1/image/health` |
 | [agent/stub_drawthings.py](agent/stub_drawthings.py) | A stand-in for the app, so this can be tested without the checkpoint |
-| [HUB_5.9.html](HUB_5.9.html) | The **AI Content** panel — the user-facing interface, unchanged in shape |
+| [HUB_6.html](HUB_6.html) | The **AI Content** panel — the user-facing interface, unchanged in shape |
 
 ## Why the A1111 API and not gRPC
 
@@ -107,7 +107,7 @@ cd agent && .venv/bin/python -m uvicorn serve:app --host 127.0.0.1 --port 3904 -
 
 # 3 · Draw Things: switch its API server on, load Z Image Turbo 1.0
 # 4 · open the app, choose SEQUENCE CONTENT, and use the AI Content panel
-open http://localhost:3900/HUB_5.9.html
+open http://localhost:3900/HUB_6.html
 ```
 
 The panel polls `/v1/image/health` on mount and shows which engine would run. A

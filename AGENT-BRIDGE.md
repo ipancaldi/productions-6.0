@@ -9,7 +9,7 @@ thing to fix first and `AGENT_V` is the thing to raise.
 |---|---|
 | **Host** | `production-hub-v5.html` — section *4c · THE AGENT BRIDGE*, plus `ed-sketch`, `ed-refs`, `ed-agent` |
 | **Panels** | `sketchpad.html`, `refboard.html` — `<iframe>` + `postMessage`, same shape as the Scene Study |
-| **Service** | `5.9/agent/` — FastAPI + uvicorn, `127.0.0.1:3902`, official `anthropic` SDK |
+| **Service** | `6.0/agent/` — FastAPI + uvicorn, `127.0.0.1:3902`, official `anthropic` SDK |
 | **Model** | `claude-opus-5`, or a **local VLM** — see `VISION.md § The local engine` |
 | **Version** | every message and every request carries `v: 1`; anything else is ignored, silently, on all sides |
 

@@ -1,9 +1,9 @@
-# Productions 5.9
+# Productions 6.0
 
 An interactive prototype for planning a live production: sketch the stage, build
 it in 3D, cut content to it, and watch the result. No build step, no bundler, no
-package manager — every panel is a single hand-written HTML file that runs
-straight from the dev server.
+package manager — the tools are hand-written HTML files and the host is
+hand-written ES modules, and both run straight from the dev server.
 
 ## Run it
 
@@ -11,7 +11,7 @@ straight from the dev server.
 python3 serve.py
 ```
 
-Then open <http://localhost:3900/HUB_5.9.html>.
+Then open <http://localhost:3900/HUB_6.html>.
 
 **The port is not arbitrary.** The local agent's CORS allow-list is exactly
 `localhost:3900` / `127.0.0.1:3900` / `null`, so on any other port the Sketch Pad
@@ -22,10 +22,28 @@ reasons are written into the top of [`serve.py`](serve.py).
 
 ## The panels
 
-`HUB_5.9.html` is the host. It owns the take — the single shared document — and
+`HUB_6.html` is the host. It owns the take — the single shared document — and
 hosts the tools as same-origin iframes over a versioned `postMessage` bridge.
 The tools hold no truth of their own; they ask the host and render what comes
 back.
+
+**v6.0 · the host is a folder now.** It was one 13,600-line file, which was
+one file too few. The markup, the stylesheet and the icon sprite stay in
+`HUB_6.html`; everything else lives in [`hub/`](hub/) as native ES modules —
+no bundler, no build step, no package manager, just `<script type="module">`
+and relative imports the dev server already serves.
+
+| | |
+|---|---|
+| [`hub/main.js`](hub/main.js) | the entry point: import core, import the panels, mount |
+| [`hub/core.js`](hub/core.js) | the model — the three nouns, the derivations, the layout engine, the bridge, and the shared domain every panel has to agree about |
+| [`hub/history.js`](hub/history.js) | the change log. Imports nothing, so core can call it without a cycle |
+| [`hub/panels/*.js`](hub/panels/) | the 50 panels, in ten modules. A panel's own helpers live in the file with it |
+
+The cut is deliberate: a helper only leaves a panel file when **more than one
+panel has to agree about it** — those went into core under `6 · SHARED PANEL
+DOMAIN`. Everything else stayed next to the panel that uses it, which is where
+it was written and where it is read.
 
 | | |
 |---|---|
@@ -35,6 +53,13 @@ back.
 | [`video-preview.html`](video-preview.html) | what the screens are playing, composited |
 | [`sketchpad.html`](sketchpad.html) | draw a plan; the agent turns it into geometry |
 | [`refboard.html`](refboard.html) | reference images, read by the vision model |
+
+**History** is the v6.0 panel and the only one that is not about the scene: it
+is the production's account of itself. Every edit is recorded against the take
+it was made in *and the task that was open when it was made* — so a change
+carries its own reason without anybody being asked to type one. The panel shows
+CHANGES (everything one person did in one take against one task); the per-edit
+feed is one disclosure underneath, for when the evidence is what is in dispute.
 
 [`agent/`](agent/) is the local Studio Agent API — FastAPI, holds no take,
 persists nothing. Image generation goes through **Draw Things locally**; there
@@ -53,7 +78,7 @@ These are the documents to fix first when the halves disagree:
 
 ## Try it
 
-<https://ipancaldi.github.io/productions-5.9/HUB_5.9.html>
+<https://ipancaldi.github.io/productions-6.0/HUB_6.html>
 
 The hosted copy runs the real thing, with two differences that are properties of
 being on a remote host rather than bugs:

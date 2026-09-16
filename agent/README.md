@@ -1,4 +1,4 @@
-# 5.9/agent — the Studio Agent API
+# 6.0/agent — the Studio Agent API
 
 FastAPI on `127.0.0.1:3902`. The host's only counterpart; the contract is
 [`../AGENT-BRIDGE.md`](../AGENT-BRIDGE.md).
@@ -11,13 +11,13 @@ dropped.
 
 ```bash
 cd ~/Documents/Productions
-5.9/agent/.venv/bin/python -m uvicorn serve:app --host 127.0.0.1 --port 3902 --app-dir 5.9/agent --reload
+6.0/agent/.venv/bin/python -m uvicorn serve:app --host 127.0.0.1 --port 3902 --app-dir 6.0/agent --reload
 ```
 
 Or the `agent-api` entry in `.claude/launch.json`. First time only:
 
 ```bash
-python3 -m venv 5.9/agent/.venv && 5.9/agent/.venv/bin/python -m pip install -r 5.9/agent/requirements.txt
+python3 -m venv 6.0/agent/.venv && 6.0/agent/.venv/bin/python -m pip install -r 6.0/agent/requirements.txt
 ```
 
 ## Files
