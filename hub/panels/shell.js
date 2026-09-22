@@ -27,11 +27,26 @@ app.component('ed-sketch', {
       <code>sketchpad.html</code>
       <button class="tool-reload" style="margin: 0" @click="reload">TRY AGAIN</button>
     </div>
-    <div v-else-if="agentS.health === 'down'" class="tool-state" style="background: var(--scrim);">
-      <span>The agent is not running, so a sketch has nowhere to go.</span>
-      <code>"ChatGPT 5.5/agent/.venv/bin/python" -m uvicorn serve:app --port 3904 --app-dir "ChatGPT 5.5/agent"</code>
-      <button class="tool-reload" style="margin: 0" @click="agentHealth">CHECK AGAIN</button>
-    </div>
+  </div>
+  <!-- v6.0.1 · THE PAD IS NOT THE AGENT, AND IT USED TO BE COVERED AS IF IT WERE.
+       A health of "down" drew a full-bleed .tool-state over the iframe saying
+       "the agent is not running, so a sketch has nowhere to go" — which blanked
+       a tool that works perfectly well on its own, and said something untrue
+       while doing it. DRAWING, MEASURING, TRACING AND BUILD 3D ALL RUN IN THE
+       PAGE: strokes become solids and arrive in the Scene Study over the bridge,
+       with nothing asked of AID3N. Even SNAPSHOT is a postMessage to the Scene
+       Study, not a call to the agent. The deployed build on Pages, where the
+       agent is unreachable by construction, draws and builds exactly as it does
+       here — which is the proof the cover was wrong rather than cautious.
+
+       What the agent is genuinely needed for is INTERPRETING a drawing into a
+       proposal, and that is the Agent plan panel's job, not this one's. So the
+       fact survives and the block does not: one line under the pad, absent when
+       the agent is up, and taking nothing away when it is down. -->
+  <div v-if="agentS.health === 'down'" class="callout" style="gap: var(--space-4);">
+    <span style="font: var(--t-body-s); color: var(--text-secondary);">Draw, trace, measure and BUILD 3D all run here and are working — solids go straight to the Scene Study. Only <strong>interpreting</strong> a sketch into a proposal needs AID3N, and it is not answering.</span>
+    <code style="font: var(--t-body-xs); color: var(--text-meta);">agent/.venv/bin/python -m uvicorn serve:app --port 3904 --app-dir agent</code>
+    <button class="tool-reload" style="margin: 0; align-self: flex-start;" @click="agentHealth">CHECK AGAIN</button>
   </div>
   <q-reveal :enabled="state === 'live'" q="What does the agent actually get?"
             a="Two things, not one. The rasterised drawing is what it looks at; the vector record — every stroke, every labelled anchor, the projection you declared and the scale you drew — is what makes its answers snap to what you actually drew. Neither is enough alone: an image alone gives room-level accuracy, and vectors alone cannot tell a stage from a seating bank. And whatever comes back is a PLAN, not a change: nothing moves in the take until you accept it."
