@@ -2,10 +2,10 @@
    core.js holds the model; each panel module registers its own components
    against the app core creates; the mount happens once they all have. */
 import {
-  app, newSketch, openTake, s,
+  app, newSketch, openTake, s, REQS,
   memberOf, memberName, initialsOf, computed, take, PANEL_NEEDS,
 } from './core.js';
-import { changes, who, seenAt, markSeen, isRaised, reqsOfChange, hhmm } from './history.js';
+import { changes, who, seenAt, markSeen, isRaised, reqsOfChange, hhmm, ack, isAcked } from './history.js';
 import './panels/shell.js';
 import './panels/work.js';
 import './panels/kit.js';
@@ -64,7 +64,13 @@ app.component('panel-alert', {
       const t = take.value, pid = t ? t.prodId : null;
       return changes.value.filter(c => (!pid || c.prodId === pid));
     });
-    const raised = computed(() => mine.value.filter(c => isRaised(c.id)));
+    /* THE BASELINE IS NOT THIS BAND'S NEWS. It is a fact about the production,
+       so it was printed identically inside every open panel — five copies of the
+       same sentence on one screen, which is how the loudest announcement in the
+       workspace came to read as wallpaper. It has its own full-width band under
+       the top bar now; what is left here is the bat signal, which IS panel news.
+       See `baseline-band` below. */
+    const raised = computed(() => mine.value.filter(c => isRaised(c.id) && !baselineOf(c)));
     /* relevant, somebody else's, and newer than the last time I looked */
     const affects = computed(() => {
       if (!reqs.value.length) return [];
@@ -85,6 +91,20 @@ app.component('panel-alert', {
       const st = t && t.steps.find(x => x.id === c.task);
       return st ? st.label : null;
     };
+    /* WHAT IT WAS ABOUT, when no task explains it. The band used to fall back to
+       "changed something", which is the shrug it sounds like — and it reaches
+       that fallback far more often now that an edit only keeps a task that
+       actually explains it. The requirements the change EDITED are right there
+       in its step ids, so it can say them; the ones it merely knocked on are
+       deliberately left out, or the band would claim work nobody did.
+       A requirement's label is a phrase — SET UP LED FEEDS — so the sentence
+       reads "worked on" rather than "changed": grammatical, and the weaker of
+       the two claims, which is the right one to make from a step id alone. */
+    const areaOf = (c) => {
+      const set = new Set();
+      c.entries.forEach(e => { if (e.step && e.step.includes('.')) set.add(e.step.split('.')[0]); });
+      return [...set].map(k => (REQS[k] || {}).label).filter(Boolean).slice(0, 2).join(' · ');
+    };
     const moved = (c) => (c.impact || []).filter(f => f.material)
       .map(f => f.label + ' ' + (f.delta > 0 ? '+' : '−') +
         (f.key === 'cost' ? '£' + Math.abs(Math.round(f.delta)).toLocaleString()
@@ -97,7 +117,7 @@ app.component('panel-alert', {
       return (e && e.kind === 'live' && e.to) ? e : null;
     };
     const isThisTake = (c) => take.value && c.takeId === take.value.id;
-    return { take, raised, affects, dismiss, memberName, hhmm, takeNameOf, taskOf, moved,
+    return { take, raised, affects, dismiss, memberName, hhmm, takeNameOf, taskOf, areaOf, moved,
              baselineOf, isThisTake };
   },
   template: `
@@ -106,7 +126,10 @@ app.component('panel-alert', {
     <span class="pbanner-tag">{{ baselineOf(c) ? 'NEW BASELINE' : 'RAISED' }}</span>
     <span class="pbanner-txt">
       <template v-if="baselineOf(c)">
-        <b>{{ memberName(c.who) }}</b> set <b>{{ baselineOf(c).to }}</b> as the baseline — the agreed version everybody works to.
+        <b>{{ memberName(c.who) }}</b>
+    <template v-if="baselineOf(c).note"> approved <b>{{ baselineOf(c).to }}</b>, proposed by <b>{{ memberName(baselineOf(c).note) }}</b></template>
+    <template v-else> set <b>{{ baselineOf(c).to }}</b></template>
+    — the agreed version everybody works to.
         <template v-if="isThisTake(c)"> You are in it.</template>
         <template v-else> You are in {{ takeNameOf(take ? take.id : '') }}, which is now an option beside it.</template>
       </template>
@@ -121,12 +144,54 @@ app.component('panel-alert', {
     <span class="pbanner-tag">AFFECTS THIS</span>
     <span class="pbanner-txt"><b>{{ memberName(c.who) }}</b>
       <template v-if="taskOf(c)"> decided {{ taskOf(c) }}</template>
+      <template v-else-if="areaOf(c)"> worked on {{ areaOf(c) }}</template>
       <template v-else> changed something</template>
       in {{ takeNameOf(c.takeId) }}.
       <template v-if="moved(c)"> {{ moved(c) }}.</template>
       <span class="pbanner-when">{{ hhmm(c.at) }}</span></span>
     <button class="pbanner-x" title="Seen it" @click="dismiss"><ic n="close"></ic></button>
   </div>
+</div>` });
+
+/* ---- THE BASELINE BAND — one decision, said once ----------------------
+   "Which take is the team working to" is a fact about the PRODUCTION. It does
+   not become a different fact inside the LED panel, so repeating it there, and
+   in the four panels beside it, only taught people to read past it.
+
+   It sits under the top bar instead: full bleed, above everything, once.
+
+   AND IT CAN BE CLOSED, which is only honest because the answer is permanent
+   somewhere else — the rail marks the baseline take with BASELINE for as long
+   as it is one. This band is the NEWS that it changed, and news is the kind of
+   thing a person is allowed to be finished with. Dismissal is per person and
+   already has a home: `ack` is the workspace's record of "I have dealt with
+   this", which is exactly what closing it means. */
+app.component('baseline-band', {
+  setup() {
+    const baselineOf = (c) => {
+      const e = c.entries.length === 1 ? c.entries[0] : null;
+      return (e && e.kind === 'live' && e.to) ? e : null;
+    };
+    const bands = computed(() => {
+      const t = take.value, pid = t ? t.prodId : null;
+      return changes.value.filter(c => (!pid || c.prodId === pid)
+        && isRaised(c.id) && baselineOf(c) && !isAcked(c.id, who.me));
+    });
+    const takeNameOf = (id) => (s.takes.find(t => t.id === id) || {}).name || '—';
+    const isThisTake = (c) => take.value && c.takeId === take.value.id;
+    const dismiss = (c) => ack(c.id, who.me);
+    return { bands, baselineOf, takeNameOf, isThisTake, dismiss, memberName, hhmm, take };
+  },
+  template: `
+<div v-for="c in bands" :key="'gb' + c.id" class="gband">
+  <span class="gband-tag">NEW BASELINE</span>
+  <span class="gband-txt">
+    <b>{{ memberName(c.who) }}</b> set <b>{{ baselineOf(c).to }}</b> as the baseline — the agreed version everybody works to.
+    <template v-if="isThisTake(c)"> You are in it.</template>
+    <template v-else> You are in {{ takeNameOf(take ? take.id : '') }}, which is now an option beside it.</template>
+    <span class="gband-when">{{ hhmm(c.at) }}</span>
+  </span>
+  <button class="gband-x" title="Seen it — the baseline take stays marked in the rail" @click="dismiss(c)"><ic n="close"></ic></button>
 </div>` });
 
 /* ---- AVATAR ----

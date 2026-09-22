@@ -1022,7 +1022,32 @@ const IN = {
     setTimeout(settleGrouping, 5000);
   },
   scene(m) {
-    S.takeId = m.takeId || null;
+    /* ---------- A DIFFERENT TAKE IS A DIFFERENT SHOW ----------
+       This panel is not re-created when the take changes under it: it stays mounted
+       across workspaces and across takes, and `scene` is all it hears. So everything
+       below ran with the PREVIOUS take's cues still in `S.seqs` — and, because
+       `settled` had been true since this document was born, the publish at the foot of
+       this handler wrote them into the take you had just arrived at. Fork a take with
+       two cues in it, add a third in the fork, glance back at the parent: three. The
+       leak ran both ways and through every take you passed through.
+
+       `settled` is exactly the right lever and it was simply never pulled twice. It
+       means "this panel knows what the grouping IS" — false while a newborn panel waits
+       for the replay, and false again here, for the same reason and for as long: until
+       the host has said what THIS take's cues are, this panel has nothing to say about
+       them and must not publish. Emptied as well as unsettled, so the replay is adopted
+       whole by the `!S.seqs.length` branch below rather than reconciled against a show
+       it has nothing to do with. The clips go too: a fork has the same track ids as its
+       parent, so the `known` test further down would have kept every one of them. */
+    const to = m.takeId || null;
+    if (S.takeId && to !== S.takeId) {
+      [...S.clips.keys()].forEach(dropClip);
+      S.seqs = []; S.cur = null; S.sel = null; S.selClip = null;
+      restored = false; cuedOnce = false; settled = false; groupSig = '';
+      /* and the same backstop a newborn panel gets, for a host too old to replay */
+      setTimeout(settleGrouping, 5000);
+    }
+    S.takeId = to;
     S.tracks = (m.tracks || []).map(t => ({ id: t.id, label: t.label || t.id, name: t.name || '' }));
     /* a track the take no longer has takes its clip and its place in a sequence
        with it — the take is the record of what exists */

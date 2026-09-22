@@ -1,6 +1,6 @@
 import {
   AGENT_BASE, AGENT_V, GEN_ASSETS, GEN_REV, aiUi, app, computed, focusObj,
-  genEstimate, genFor, genSeq, gesture, ledWalls, num, onBeforeUnmount, onMounted,
+  genEstimate, genFor, gesture, ledWalls, nextGenSeq, num, onBeforeUnmount, onMounted,
   panelCtx, placeAssetOn, plain, reactive, recordTiming, ref, routeDestinations, s,
   seed, take, toast, useSceneTool, watch, watchEffect,
 } from '../core.js';
@@ -414,6 +414,11 @@ app.component('ed-aiden', {
          canvas picker. */
       const kf = (isVid.value && fromShown.value && shown.value && shown.value.kind === 'image'
                   && shown.value.b64) ? shown.value.b64 : null;
+      /* THE NUMBER FOR THIS RUN, TAKEN ONCE. It is the seed the service draws with and
+         the number the frame is filed under, and taking it here rather than reading it
+         before the request and bumping it after means those two cannot disagree — not
+         when a second AI Content panel is asking at the same moment, and not ever. */
+      const seq = nextGenSeq();
       busy.value = true; err.value = ''; elapsed.value = 0;
       startedAt.value = Date.now();
       estMs.value = willTake.value;
@@ -425,7 +430,7 @@ app.component('ed-aiden', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           signal: abort.signal,
           body: JSON.stringify({ v: AGENT_V, prompt: q, w: sz.w, h: sz.h,
-                                 variant: genSeq + 1, refine: refine.value,
+                                 variant: seq, refine: refine.value,
                                  kind: mode.value,
                                  motion: isVid.value ? motion.value.trim() : '',
                                  frames: isVid.value ? frames.value : undefined,
@@ -441,7 +446,7 @@ app.component('ed-aiden', {
         const blob = vid ? unb64(d.mp4, 'video/mp4')
                          : d.png ? unb64(d.png, 'image/png') : await rasterise(d.svg, d.w, d.h);
         const bytes = await blob.arrayBuffer();
-        const id = 'gen-' + (++genSeq);
+        const id = 'gen-' + seq;
         const name = q.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
                       .slice(0, 40) + '-' + id + (vid ? '.mp4' : '.png');
         /* THE POSTER IS THE KEYFRAME, and it costs nothing: the service sends frame one

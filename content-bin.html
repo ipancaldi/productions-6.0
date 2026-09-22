@@ -431,7 +431,31 @@ const IN = {
     if (m.tokens) applyTokens(m.tokens);
     S.live = true; status();
   },
-  scene(m) { S.takeId = m.takeId || null; },
+  /* THE SHELF BELONGS TO ONE TAKE, and until now it belonged to the PANEL. `S.items`
+     was never cleared, so the files of the take you opened first went on showing in
+     every other take you visited — still counted, still marked IN SHOW against lanes
+     that were somebody else's. A fork looked like it had inherited the content when in
+     fact nothing had been inherited at all; the panel had simply never let go.
+     Cleared on a real change of take, and the host replays this take's own shelf
+     straight after — see `replayTake` in the hub. Not on the first `scene` of the
+     panel's life, which only goes from null to a take and has nothing to drop. */
+  scene(m) {
+    const to = m.takeId || null;
+    if (S.takeId && to !== S.takeId) {
+      S.items.clear(); S.rows.clear(); S.seqs = []; S.sel = null;
+      render();
+    }
+    S.takeId = to;
+  },
+  /* A ROW SOMEBODY ELSE'S BIN TOOK IN, or this take's own shelf coming back after a
+     remount or a fork. It carries no track: it is inventory, which is exactly what
+     distinguishes it from a `mediaAsset`. */
+  binAsset(m) {
+    if (!m || !m.bytes || !m.name || !m.assetId) return;
+    if (S.items.has(m.assetId)) return;
+    add({ id: m.assetId, name: m.name, kind: m.kind || 'video', bytes: m.bytes,
+          size: m.bytes.byteLength, source: 'bin' }, new Set(), true);
+  },
   /* a file loaded on a track ANYWHERE in this take. It is content this production
      is using, so it belongs in the bin whether or not somebody put it there — the
      bin is an inventory, not a scrapbook. */
@@ -502,10 +526,17 @@ function devLog(dir, type, body) {
 /* ==========================================================================
    3 · TAKING THINGS IN
    ========================================================================== */
-function add(item, tracks) {
+/* `quiet` means THE HOST ALREADY HAS THIS — it is a replay, or another bin's row
+   arriving — so it must not be posted back. Everything else this panel takes in is news
+   to the production, and saying so is what makes it survive this panel: a remount, a
+   second bin, another user's, and a fork. See `BIN_BY_TAKE` in the hub. */
+function add(item, tracks, quiet) {
   item.tracks = tracks || new Set();
   item.thumb = null; item.dur = 0;
   S.items.set(item.id, item);
+  if (!quiet && item.source !== 'take') {
+    post('binAsset', { assetId: item.id, name: item.name, kind: item.kind, bytes: item.bytes });
+  }
   render();
   thumbQ.push(item);
   if (!thumbBusy) nextThumb();

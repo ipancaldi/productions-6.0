@@ -53,6 +53,17 @@
      600 did not move: it is text/disabled, which WCAG exempts as inactive, and
      it is also surface/emphasis — lifting it would move a surface to fix a
      type tone. -------------------------------------------------------------- */
+  /* ABOVE THE RAMP, AND DELIBERATELY OUTSIDE IT. gray-300 is the top of the
+     grey scale and text/primary resolves to it, which is right for every
+     string in the build that sits in a panel. The welcome title is the one
+     piece of type with nothing around it and no work under it, and it is set
+     in Aeonik LIGHT at 60px — a cut that loses presence at 4.5:1 tone the way
+     a thin stem loses it at small size. Pure white buys back the weight that
+     Aeonik has no cut for: there is nothing between Light 300 and Regular 400
+     in the installed family, so the title gains its authority from contrast
+     instead. Used by `.land-h-2` and by nothing else; it is not a text token
+     and not a surface. */
+  --white:    #FFFFFF;
   --gray-300: #D0D5DD;
   --gray-400: #A2ABBA;
   --gray-500: #858FA2;
@@ -267,6 +278,13 @@
   --tint-failed-s:  rgba(255, 152, 244, 0.16);
   --tint-info:      rgba(210, 179, 237, 0.07);
   --tint-beam:      rgba(247, 144,   9, 0.10);  /* amber/500 — the beam's volume */
+  /* the dotted ground of an empty workspace. gray-300, raised from a tenth to
+     0.16: at 0.10 the invitation was there for anyone looking for it and
+     invisible to anyone who was not, which is the wrong way round for the one
+     surface whose whole job is to say "drag on me". Still well under the
+     0.18 of tint/emphasis, so a panel landing on top of it is comfortably the
+     thing with contrast. */
+  --tint-dots:      rgba(208, 213, 221, 0.16);
   --tint-emphasis:  rgba(208, 213, 221, 0.18);
   --tint-emphasis-s:rgba(208, 213, 221, 0.08);
   --tint-emphasis-m:rgba(208, 213, 221, 0.24);
@@ -339,6 +357,34 @@
   --radius-pill: 999px;  /* Scale pill */
 
   --font: "Inter", system-ui, -apple-system, sans-serif;
+
+  /* THE BRAND PAIRING: Aeonik for headings, Inter for body — never the other
+     way round. Only the welcome screen's title uses this today, which is why
+     it is one token rather than a second ramp: every other heading in the
+     build is chrome at 13px or smaller, where the pairing rule does not apply
+     and Inter is doing the right job.
+
+     AEONIK IS NOT BUNDLED. It is a licensed face and there is no webfont in
+     this repo, so this resolves to a locally installed copy and to Helvetica
+     Light — the brand's own stated fallback — for anyone without one. On
+     GitHub Pages that means Inter at the end of the stack.
+
+     THERE IS NO 350, AND `font-weight: 350` WOULD NOT TELL YOU SO. Aeonik is
+     installed as separate static files — Light 300, Regular 400, no variable
+     axis — so CSS weight matching rounds anything from 300 to 399 down to
+     Light and only reaches Regular at 400. Asking for 350 renders Light
+     exactly, silently, and a title that looked untouched would be the only
+     evidence. Measured: 300, 325, 350 and 375 all set this string to 532.98px
+     and 400 sets it to 561.42px.
+
+     DRAWING THE HALF STEP DOES NOT WORK EITHER, AND IT WAS TRIED. A
+     `-webkit-text-stroke` in the text's own colour should thicken the stems
+     toward Regular; rendered at 0.5, 1.1, 1.6 and 2.1px the title did not
+     change at all — computed style reported the stroke, the screen showed
+     Light. A synthetic weight that silently no-ops is worse than no synthetic
+     weight, so the title is Aeonik Light at its real weight and the decision
+     of which CUT to use stays a decision. */
+  --font-display: "Aeonik", "Helvetica Neue", Helvetica, var(--font);
 
   /* ---- The text styles -----------------------------------------------------
      v2 rendered 86 distinct combinations of size, weight, tracking and case.
@@ -541,9 +587,24 @@ strong, b { font-weight: 600; }
 .tb-prodmenu, .tb-memenu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 80; min-width: 300px; max-height: min(520px, calc(100vh - 80px)); overflow: auto; background: var(--surface-raised); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); box-shadow: var(--elev-3); padding: var(--space-6); display: flex; flex-direction: column; gap: 1px; }
 .tb-memenu { left: auto; right: 0; min-width: 232px; }
 .tb-prodh { font: var(--t-body-xs); letter-spacing: var(--tr-body-xs); text-transform: uppercase; color: var(--text-meta); padding: var(--space-6) var(--space-8); }
+/* ONE JOB, ONE BLOCK. The menu was a flat run of rows, so the take rows read
+   as siblings of the productions above them rather than as the insides of the
+   one you are in. Each production is a block now: the open one sits on a
+   darker ground so "you are here" is a surface, not a checkmark, and a hairline
+   in the gap keeps one job's takes from touching the next job's name. */
+.tb-prodgrp { display: flex; flex-direction: column; gap: 1px; padding: var(--space-4); border-radius: var(--radius-md); }
+.tb-prodgrp.on { background: var(--surface-sunken); }
+.tb-prodgrp + .tb-prodgrp { position: relative; margin-top: var(--space-8); }
+/* border-subtle is gray-700 and so is the menu it would sit on — the hairline
+   was there and invisible. On a raised surface the only rule that reads is the
+   interactive-edge stroke. */
+.tb-prodgrp + .tb-prodgrp::before { content: ''; position: absolute; top: calc(var(--space-4) * -1); left: var(--space-8); right: var(--space-8); height: 1px; background: var(--border-strong); }
 .tb-prodi { display: flex; align-items: center; gap: var(--space-8); text-align: left; background: transparent; border: 0; border-radius: var(--radius-sm); padding: var(--space-8) var(--space-8); color: var(--text-primary); cursor: pointer; }
 .tb-prodi:hover { background: var(--surface-hover); }
-.tb-prodi.on { background: var(--surface-selected); }
+/* the open TAKE still owes a mark of its own — raised inside the sunken block,
+   which is the one place surface-selected reads as selected rather than as the
+   menu's own ground. The open production is the block itself. */
+.tb-takei.on { background: var(--surface-selected); }
 .tb-prodi-n { flex: 1; min-width: 0; }
 .tb-prodi-n b { display: block; font: var(--t-body-l); letter-spacing: var(--tr-body-l); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tb-prodi-n i { display: block; font-style: normal; font: var(--t-body-xs); letter-spacing: var(--tr-body-xs); color: var(--text-meta); }
@@ -1051,6 +1112,24 @@ strong, b { font-weight: 600; }
 .pbanner-x { flex: 0 0 auto; width: 18px; height: 18px; border: 0; border-radius: var(--radius-xs); background: transparent; color: var(--gray-900); opacity: 0.55; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .pbanner-x:hover { opacity: 1; background: rgba(0, 0, 0, 0.12); }
 
+/* THE BASELINE BAND. The same pastel inversion as a panel banner — light on a
+   dark workspace, so it reads as an interruption rather than as furniture — but
+   full bleed and directly under the top bar, because what it announces is true
+   of the whole production and not of any one panel. Square, edge to edge: a
+   radius would make it a card sitting IN the workspace, and this is a bar
+   ACROSS it. */
+.gband { flex: 0 0 auto; display: flex; align-items: center; gap: var(--space-10);
+         padding: var(--space-8) var(--space-16);
+         background: color-mix(in srgb, var(--status-live) 34%, #fff);
+         border-bottom: 1px solid color-mix(in srgb, var(--status-live) 58%, #fff);
+         color: var(--gray-900); font: var(--t-body-m); line-height: 1.35; }
+.gband-tag { flex: 0 0 auto; font: var(--t-label-xs); letter-spacing: var(--tr-label-xs); text-transform: uppercase; font-weight: 700; opacity: 0.72; }
+.gband-txt { flex: 1; min-width: 0; }
+.gband-txt b { font-weight: 700; }
+.gband-when { opacity: 0.6; margin-left: var(--space-6); font-variant-numeric: tabular-nums; }
+.gband-x { flex: 0 0 auto; width: 22px; height: 22px; border: 0; border-radius: var(--radius-xs); background: transparent; color: var(--gray-900); opacity: 0.55; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.gband-x:hover { opacity: 1; background: rgba(0, 0, 0, 0.12); }
+
 /* ---------- People, as faces ----------
    Every place this build printed a name in a pill now draws one of these. Two
    letters in a disc, tinted from the member's own hue, so a row is attributed
@@ -1084,7 +1163,35 @@ strong, b { font-weight: 600; }
 .hist-dl-b { background: transparent; border: 0; border-radius: var(--radius-xs); color: var(--text-secondary); font: var(--t-label-s); letter-spacing: var(--tr-label-s); padding: var(--space-2) var(--space-6); cursor: pointer; }
 .hist-dl-b:hover { background: var(--surface-emphasis); color: var(--text-on-emphasis); }
 
-.hist-tabs { display: flex; align-items: center; gap: var(--space-4); border-bottom: 1px solid var(--border-subtle); }
+.hist-tabs { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-4); border-bottom: 1px solid var(--border-subtle); }
+/* ---- THE KEY --------------------------------------------------------------
+   It borrows the timeline's own dot classes rather than drawing look-alikes, so
+   the key cannot drift from the thing it explains — change a dot and the legend
+   changes with it. All that is overridden is the positioning: a timeline dot is
+   absolute against its row, and here it sits in a line of text. */
+.hist-key { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-12);
+  margin-left: auto; padding: var(--space-4) var(--space-6); }
+.hist-key-i { display: inline-flex; align-items: center; gap: var(--space-6); white-space: nowrap;
+  font: var(--t-body-xs); letter-spacing: var(--tr-body-xs); color: var(--text-meta); cursor: help; }
+/* RELATIVE, not static. The live dot carries a pulsing ring as an absolutely
+   positioned pseudo-element, which needs the dot itself to be its containing
+   block; `static` handed that job to the nearest positioned ancestor — the whole
+   panel body — so `inset: -1px` became a panel-sized circle breathing behind the
+   log. `relative` keeps the dot in the line of text and takes the ring back. */
+/* the rail's offsets have to go with it. `left: -23px` / `top: 13px` place a dot
+   on the spine beside its row; under `relative` they stay live as offsets and
+   dragged each key dot off its label — the green one landed on top of the next
+   item's text. One rule, specific enough to beat every variant that sets them. */
+.hist-key .tl-dot,
+.hist-key .tl-dot.now,
+.hist-key .tl-dot.alert:not(.live):not(.now) {
+  position: relative; left: 0; top: 0; margin: 0; flex: 0 0 auto; }
+/* and a legend does not blink. The ring means "this is live, right now"; in a key
+   it is describing the signal rather than giving it. */
+.hist-key .tl-dot.now::after, .hist-key .tl-dot.live::after { animation: none; opacity: 0; }
+/* matching the specificity of the rule that shrinks an alert dot in the rail,
+   which also sets margins to re-centre it there */
+.hist-key .tl-dot.alert:not(.live):not(.now) { margin: 0; }
 .hist-tab { background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--text-meta); font: var(--t-label-s); letter-spacing: var(--tr-label-s); text-transform: uppercase; padding: var(--space-8) var(--space-10); margin-bottom: -1px; cursor: pointer; }
 .hist-tab:hover { color: var(--text-secondary); }
 .hist-tab.on { color: var(--text-primary); border-bottom-color: var(--text-primary); }
@@ -1094,7 +1201,7 @@ strong, b { font-weight: 600; }
    thing you came to read. The numbers belong on the tab bar because they are
    a property of the tab you have chosen, and the definition belongs behind
    them. */
-.hist-tab-n { display: inline-flex; align-items: center; gap: var(--space-4); margin-left: auto; background: transparent; border: 0; border-radius: var(--radius-xs); color: var(--text-meta); font: var(--t-body-s); letter-spacing: var(--tr-body-s); padding: var(--space-4) var(--space-6); cursor: pointer; }
+.hist-tab-n { display: inline-flex; align-items: center; gap: var(--space-4); background: transparent; border: 0; border-radius: var(--radius-xs); color: var(--text-meta); font: var(--t-body-s); letter-spacing: var(--tr-body-s); padding: var(--space-4) var(--space-6); cursor: pointer; }
 .hist-tab-n b { color: var(--text-secondary); font-weight: 600; }
 .hist-tab-n .ic { opacity: 0.45; }
 .hist-tab-n:hover, .hist-tab-n.on { color: var(--text-secondary); background: var(--surface-hover); }
@@ -1119,12 +1226,30 @@ strong, b { font-weight: 600; }
    is a log nobody reads. Who, what, and one figure if it moved something
    material; everything else is detail you went looking for. */
 .tl { position: relative; padding-left: 78px; display: flex; flex-direction: column; gap: var(--space-6); }
-.tl::before { content: ''; position: absolute; left: 59px; top: 8px; bottom: 8px; width: 1px; background: var(--border-subtle); }
+/* THE RAIL, DRAWN PER ROW. It was one absolute line down the whole list, and a
+   single line cannot say anything different about one stretch of itself — which
+   is exactly what a take that has gone back and diverged needs it to do. Each
+   row now draws its own segment, overlapping the gap above and below so the
+   rail still reads as continuous wherever it is continuous. */
+.tl-row::before { content: ''; position: absolute; top: -4px; bottom: -4px;
+  left: calc(-19px + min(var(--br, 0), 4) * 22px); width: 1px; background: var(--text-meta); }
+/* the ends: the rail begins at NOW and stops at the oldest change, rather than
+   running off both edges of the list */
+.tl-row.now::before { top: 8px; }
+.tl-row:last-child::before { bottom: auto; height: 22px; }
 .tl-row { position: relative; }
 .tl-time { position: absolute; left: -78px; top: 9px; width: 42px; text-align: right; font: var(--t-body-s); letter-spacing: var(--tr-body-s); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .tl-time i { display: block; font-style: normal; font: var(--t-body-xs); letter-spacing: var(--tr-body-xs); color: var(--text-meta); }
 .tl-dot { position: absolute; left: -23px; top: 13px; width: 9px; height: 9px; border-radius: 50%; background: var(--surface-raised); box-shadow: 0 0 0 1px var(--border-strong); }
+/* THE ALERT DOT, SMALLER THAN THE LIVE ONE. Every change that moves a material
+   figure carries this, so at full size a column of them shouted as loudly as the
+   one dot that marks where the take actually stands. 30% off the 9px live dot,
+   re-centred on the rail so the row of dots still lines up. */
 .tl-dot.alert { background: var(--status-active); box-shadow: 0 0 0 1px var(--status-active); }
+/* ...but NOT when it is also the live one. The head of the live route carries
+   both classes, so shrinking every alert dot shrank the single green dot that
+   says where the take actually stands — the one dot that had earned its size. */
+.tl-dot.alert:not(.live):not(.now) { width: 6px; height: 6px; margin-left: 1.5px; margin-top: 1.5px; }
 .tl-dot.back { background: var(--surface-canvas); box-shadow: 0 0 0 1px var(--text-meta), inset 0 0 0 2px var(--surface-raised); }
 .tl-dot.now { top: 4px; }
 /* WHERE THE TAKE ACTUALLY IS. Two dots are live: NOW, and the change the live
@@ -1153,13 +1278,22 @@ strong, b { font-weight: 600; }
 .tl-row.now .tl-time { top: 0; color: var(--text-meta); }
 .tl-nowt { font: var(--t-body-s); letter-spacing: var(--tr-body-s); color: var(--text-meta); }
 
-.tl-card { background: var(--surface-sunken); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
+.tl-card { background: transparent; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
 .tl-row.sel .tl-card { border-color: var(--status-active); }
 .tl-hd { display: flex; align-items: center; gap: var(--space-8); width: 100%; background: transparent; border: 0; padding: var(--space-8) var(--space-10); text-align: left; color: var(--text-primary); font: var(--t-body-m); cursor: pointer; }
 .tl-hd:hover { background: var(--surface-hover); border-radius: var(--radius-md); }
 .tl-hd-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tl-hd-t b { font-weight: 600; }
-.tl-mark { flex: 0 0 auto; font: var(--t-label-xs); letter-spacing: var(--tr-label-xs); color: var(--status-active); }
+/* THE MONEY ON A ROW. Bigger than it was — 8px was a figure you had to go
+   looking for — and quieter: grey rather than the alert accent, because a number
+   drawn in alarm on EVERY row is a number nobody reads. Tabular figures so a
+   column of them lines up on the decimal, which is what makes a quiet number
+   scannable without shouting. Only a genuine spike gets colour, and it borrows
+   the palette's own alarm tint rather than introducing a red the design system
+   does not name. */
+.tl-mark { flex: 0 0 auto; font: var(--t-body-l); letter-spacing: var(--tr-body-l);
+  color: var(--text-meta); font-variant-numeric: tabular-nums; }
+.tl-mark.peak { color: var(--status-failed); }
 /* how many interactions went into one recorded change — the count survives the
    fold even though the intermediate values deliberately do not */
 .tl-hits { margin-left: var(--space-4); font: var(--t-body-xs); letter-spacing: var(--tr-body-xs); color: var(--text-meta); border: 1px solid var(--border-subtle); border-radius: var(--radius-xs); padding: 0 3px; }
@@ -1168,8 +1302,149 @@ strong, b { font-weight: 600; }
 /* A ROUTE THAT WAS LEFT BEHIND. Still true as history, no longer true as
    state — so it is dimmed rather than deleted, and folded rather than dimmed
    in place, because a pile of greyed cards is still a pile. */
-.tl-row.dead .tl-card { opacity: 0.42; border-style: dashed; }
+/* ---- WHAT CEASED TO EXIST, AND WHAT REPLACED IT ------------------------
+   A restore does not delete anything, so the log holds work that is true as
+   history and untrue as state. It is drawn inert rather than removed: dashed,
+   faded, struck at the headline — legible enough to compare against, obviously
+   not part of the take. Pointer events stay on, because the one thing you
+   still want from an abandoned route is to open it and read it. */
+.tl-row.dead .tl-card { opacity: 0.38; border-style: dashed; }
+.tl-row.dead .tl-hd-t b { text-decoration: line-through; text-decoration-thickness: 1px; }
 .tl-row.dead .tl-dot { background: var(--surface-canvas); box-shadow: 0 0 0 1px var(--border-subtle); }
+.tl-row.dead:hover .tl-card { opacity: 0.72; }
+/* DIMMED, AND INERT WITH IT. The money and the impact band on a replaced change
+   describe a cost the production is no longer carrying, so they drop their accent
+   and read as the record they now are — colour here would be asserting a live
+   consequence. Opening the row to READ it stays available, which is the whole
+   reason these are still on screen. */
+.tl-row.dead .tl-mark, .tl-row.dead .tl-mark.peak { color: var(--text-meta); }
+.tl-row.dead .hist-imp { border-color: var(--border-subtle); }
+.tl-row.dead .hist-imp-tag, .tl-row.dead .hist-imp-d { color: var(--text-meta); }
+
+/* ---- THE ROUTE, AS AN INDENT -------------------------------------------
+   Every restore that skipped work opens a route, and the work done after it
+   steps one column in. Two answers to the same question then sit side by side
+   — the one you left at its old depth, the one you took at the new one —
+   instead of stacked in a single line where a fork looks like a gap.
+
+   An indent and a hairline, and nothing else: the tree is the SHAPE of the
+   list, not a diagram drawn over it. Capped at four steps, because the point
+   is "this is a different route", not "this is route number nine". */
+.tl-row { padding-left: calc(min(var(--br, 0), 4) * 22px); }
+.tl-row .tl-dot { left: calc(-23px + min(var(--br, 0), 4) * 22px); }
+/* border-strong, not border-subtle: subtle IS the sunken ground these rows sit
+   on, so the branch was drawn and could not be seen. */
+/* THE STRETCH SINCE THE COURSE CHANGED, drawn dashed. Nothing is dimmed and no
+   colour is spent: these changes are as real as any other, they are simply on a
+   line the team has not agreed to yet, and a dashed rail is the plainest way to
+   say provisional. It goes solid the moment the take becomes the baseline. */
+.tl-row.diverged::before, .tl-row.off::before { width: 0; background: none;
+  border-left: 1px dashed var(--text-meta); }
+/* ---- ANOTHER TAKE'S WORK ------------------------------------------------
+   Whichever take is open is the line you are on; everything belonging to any
+   other take is still true, still readable and plainly not where you are
+   standing. Dimmed rather than hidden, because the production-wide view exists
+   precisely so you can see what the other proposals are doing. */
+.tl-row.off .tl-card { opacity: 0.5; }
+.tl-row.off:hover .tl-card { opacity: 0.85; }
+.tl-row.off .tl-dot { opacity: 0.6; }
+.tl-diverge.off { opacity: 0.6; }
+
+/* ---- THE TURN --------------------------------------------------------
+   An SVG, because this is the one place in the timeline that is a CURVE and
+   CSS corners cannot make an S. It sits in the junction row and spans the gap
+   above and below it, so the rail reads as one unbroken line that changes
+   column rather than as two lines that happen to be near each other. */
+.tl-join { position: absolute; left: -22px; top: -8px; bottom: -8px; width: 23px; pointer-events: none; }
+/* the fork band carries a 16px gap above it — the break in rhythm that says a
+   different line starts here — and the curve has to span that gap or the rail
+   arrives at nothing */
+.tl-diverge.fork .tl-join { top: -22px; bottom: -8px; }
+.tl-join svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.tl-join path { fill: none; stroke: var(--text-meta); stroke-width: 1.25; vector-effect: non-scaling-stroke;
+  stroke-linecap: round; }
+/* one step LEFT of the branch: this curve LEAVES the trunk, so it has to begin
+   on it. Measured off the rendered rails — starting it at the child's column put
+   its whole width 22px to the right of the line it was supposed to join. */
+.tl-joinrow { position: relative; height: 18px; }
+.tl-joinrow .tl-join { left: calc(-19px + (min(var(--br, 0), 4) - 1) * 22px);
+  top: -10px; bottom: -10px; }
+/* ---- THE LINE THE FORK LEFT BEHIND -------------------------------------
+   The take you forked FROM did not stop existing when you stepped off it, and
+   the schematic is right that it should be visible carrying straight on past
+   the detour. Drawn dashed at the parent's column beside every row of the
+   branch, so the reader can see the two lines running in parallel and which
+   one they are on. */
+/* ONE ELEMENT PER BYPASSED LINE, rather than one pseudo-element per row. A row
+   nested two forks deep leaves two takes running behind it and has to keep both
+   lines alive; ::before and ::after are already the row's own rail and its
+   elbow, and there is no third. So the rows render a span per depth they are
+   nested past, and the geometry is the same formula every other line uses. */
+.tl-bypass { position: absolute; top: -8px; bottom: -8px;
+  left: calc(-19px + var(--d, 0) * 22px);
+  width: 0; border-left: 1px dashed var(--text-meta); opacity: 0.75; pointer-events: none; }
+/* NOW is where the bypassed line starts — the take you stepped off carries on
+   from the same instant — and the turn and the label are the two places it used
+   to break, because both sit in gaps no row covers. */
+.tl-row.now .tl-bypass { top: 8px; bottom: -8px; }
+.tl-joinrow .tl-bypass { top: -10px; bottom: -10px; }
+/* the bands carry their own indent as a margin, so their spans are measured back
+   from it rather than from the row grid */
+.tl-bypass.band { left: calc((var(--d, 0) - min(var(--br, 0), 4)) * 22px); }
+.tl-diverge.fork .tl-bypass { top: -24px; bottom: -8px; }
+/* THE ELBOW into abandoned work. Newest sits at the top, so the route that was
+   skipped hangs BELOW the change that skipped it — the turn is downwards, out
+   of the spine and into the stub. */
+.tl-row.back::after { content: ''; position: absolute; bottom: -4px; height: 14px;
+  left: -18px; width: 22px;
+  border-left: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle);
+  border-bottom-left-radius: 6px; }
+
+/* ---- YOURS, AND EVERYBODY ELSE'S ---------------------------------------
+   WHOEVER YOU ARE ACTING AS IS THE SOLID ONE. Their changes carry the sunken
+   fill — which is DARKER than the panel it sits on, not lighter — plus a
+   keyline in the colour their avatar already wears, so "which of these are
+   mine" is answered by a cue that is already in the room rather than by a new
+   legend. Everybody else's card drops its fill entirely and is held by its
+   hairline alone.
+
+   This was built the other way round first, on the argument that a log exists
+   to surface what OTHER people did and so theirs should be the solid ones. It
+   reads wrong: switching between people is the thing this panel is for, and
+   the eye needs the person it is currently standing in to be the anchor, not
+   the background. The rest of the row is untouched — nobody's change is dimmed
+   here, only unfilled, because a change you can barely read is a change you
+   will not act on. */
+.tl-row.mine .tl-card { background: var(--surface-sunken);
+  border-left: 2px solid hsl(var(--mine-hue, 210) 55% 52% / 0.7); }
+.tl-row:not(.mine) .tl-hd-t { color: var(--text-meta); }
+.tl-row:not(.mine) .tl-hd-t b { color: var(--text-secondary); }
+/* ---- THE DIVERGENCE BAND ------------------------------------------------
+   One line across the list at the moment the take stopped following the line it
+   was on. It states the two facts a person actually needs — how far it has run
+   since, and whether anybody has agreed to it — and then offers the action that
+   settles it. That action is the one the top bar already has: this band
+   proposes no approval of its own, because a take that everybody works to is
+   what "agreed" already means here. */
+.tl-diverge { position: relative; display: flex; align-items: center; gap: var(--space-8);
+  margin: var(--space-6) 0 var(--space-6) calc(-19px + min(var(--br, 0), 4) * 22px); }
+/* A FORK BAND IS THE SAME OBJECT ONE SIZE UP — a whole take leaving, rather
+   than a stretch of one — so it gets a clear gap above it: the break in the
+   rhythm is half of what says "a different line starts here". */
+.tl-diverge.fork { margin-top: var(--space-16); }
+.tl-diverge.fork .tl-diverge-t b { color: var(--text-primary); }
+.tl-diverge-l { height: 0; border-top: 1px dashed var(--border-strong); }
+.tl-diverge-l:first-child { flex: 0 0 18px; }
+.tl-diverge-l:last-child { flex: 1; }
+.tl-diverge-t { flex: 0 0 auto; font: var(--t-body-xs); letter-spacing: var(--tr-body-xs); color: var(--text-meta); }
+.tl-diverge-t b { color: var(--text-secondary); font-weight: 600; }
+.tl-diverge-b { flex: 0 0 auto; font: var(--t-label-xs); letter-spacing: var(--tr-label-xs);
+  text-transform: uppercase; color: var(--status-live); background: transparent;
+  border: 1px solid color-mix(in srgb, var(--status-live) 50%, transparent);
+  border-radius: var(--radius-xs); padding: 2px var(--space-6); cursor: pointer; }
+.tl-diverge-b:hover { background: color-mix(in srgb, var(--status-live) 18%, transparent); color: var(--text-primary); }
+.tl-diverge.agreed .tl-diverge-l { border-top-style: solid; }
+.tl-diverge.agreed .tl-diverge-t b { color: var(--status-live); }
 .tl-row.fork { padding: var(--space-2) 0; }
 .tl-fork { display: flex; align-items: center; gap: var(--space-6); background: transparent; border: 0; padding: var(--space-4) 0; color: var(--text-meta); font: var(--t-body-s); letter-spacing: var(--tr-body-s); cursor: pointer; }
 .tl-fork:hover { color: var(--text-secondary); }
@@ -1178,7 +1453,10 @@ strong, b { font-weight: 600; }
 .tl-body { padding: 0 var(--space-10) var(--space-10); border-top: 1px solid var(--border-subtle); }
 .tl-sub { margin: var(--space-8) 0 0; font: var(--t-body-s); letter-spacing: var(--tr-body-s); color: var(--text-meta); }
 .tl-sub b { color: var(--text-secondary); font-weight: 500; }
-.tl-body .prop { padding: var(--space-6) 0; }
+/* the horizontal padding was zeroed here back when this row was a bare line of
+   text; `.prop` has carried a border and a filled ground since, so the zero put
+   the label hard against the stroke. Only the vertical is the log's to tighten. */
+.tl-body .prop { padding: var(--space-6) var(--space-10); }
 .tl-acts { display: flex; align-items: center; gap: var(--space-6); flex-wrap: wrap; padding-top: var(--space-10); }
 .tl-cold { font: var(--t-body-xs); letter-spacing: var(--tr-body-xs); color: var(--text-meta); opacity: 0.7; }
 .tl-confirm { display: flex; align-items: center; gap: var(--space-8); flex-wrap: wrap; margin-top: var(--space-10); padding: var(--space-10) var(--space-12); background: var(--surface-selected); border: 1px solid var(--status-active); border-radius: var(--radius-sm); font: var(--t-body-m); color: var(--text-secondary); }
@@ -1254,6 +1532,261 @@ strong, b { font-weight: 600; }
 .pc-chevron { font: var(--t-body-l); font-size: 30px; line-height: 1; color: var(--border-emphasis); text-shadow: 0 2px 8px rgba(16, 24, 40, 0.6); }
 body.pc-dragging { user-select: none; }
 body.pc-dragging .pc-area-bd { pointer-events: none; }
+
+/* ---------- THE EMPTY LANDING ----------------------------------------------
+   The first screen has no panels on it, so the first screen has to teach two
+   gestures instead of demonstrating a layout. Everything here is about that:
+
+   THE DOTS say the surface is a canvas rather than a background. They appear
+   only while the workspace is empty — once there is a panel the ground is
+   covered and a dotted 8px gutter would just be noise.
+
+   THE TWO DEMOS ARE THE TRUTH, NOT AN IMPRESSION. The first one draws a box,
+   lets it snap out to fill — which is what actually happens, because the tree
+   cannot hold a floating rectangle — and then splits it from a CORNER, which
+   is the one gesture the entire layout engine is made of. The second shows a
+   task button in the rail filling the screen in one press. If either animation
+   drifted from what the app does it would be worse than no animation at all.
+
+   Both loops run on one duration so the pair reads as one system, and both
+   stop dead under prefers-reduced-motion, where the demo holds its end state:
+   the finished three-panel split and the finished cluster. A still picture of
+   the outcome is a weaker teacher than the motion, and a much better one than
+   a box flashing at somebody who asked it not to. ------------------------- */
+.pc-field { background: var(--surface-canvas); }
+.pc-field.empty {
+  background-image: radial-gradient(circle at 1px 1px, var(--tint-dots) 1px, transparent 1.6px);
+  background-size: 20px 20px;
+  cursor: crosshair;
+}
+.landing { position: absolute; inset: 0; z-index: 20; display: flex; align-items: center;
+  justify-content: center; padding: var(--space-24); pointer-events: none; overflow: auto; }
+/* AN INTRODUCTION, THEN TWO DOORS. What stood here opened with an instruction —
+   "Edit workspace" — which is a thing to do, not a place you have arrived at.
+   The first screen of a build somebody has never seen owes them what the build
+   IS before it tells them what to press, so the title block names the product
+   and makes one claim about it, and the two options underneath are the two ways
+   in. Three lines of prose and it stops: the demos beside the options were
+   always the faster explanation, and they still are.
+
+   EVERYTHING IS CENTRED ON ONE AXIS. An earlier pass set the prose left and
+   the options centred, on the argument that prose has a starting edge. With
+   the title at hero scale that argument loses: three centred lines over two
+   centred cards is one column, and a left-set paragraph under a centred
+   heading is two. */
+.land-card { pointer-events: auto; width: min(880px, 100%); display: flex; flex-direction: column;
+  /* 30px, not the 24 step. The gap between the introduction and the two doors
+     is the one measurement on this screen that is doing a job no other gap
+     does — it is the seam between being told what this is and being asked to
+     choose — and it is asked for explicitly. Written as a sum of two steps
+     rather than a bare literal, the way `.qanswer` derives its indent, so the
+     scale still accounts for it. */
+  gap: calc(var(--space-24) + var(--space-6)); cursor: crosshair; }
+
+/* THE HERO SCALE LIVES HERE AND NOWHERE ELSE. The welcome screen is the one
+   surface in the build with no work on it, so it is the one surface that can
+   afford type at twice the reading scale — and the only one that needs it,
+   because it is read from further back than anything else here.
+
+   These are LOCAL custom properties, not three new steps on the global ramp:
+   exact doublings of Display/M, Title/S and Body/L, scoped to the one block
+   that uses them, so the ten-style ramp everything else resolves through is
+   unchanged and nothing outside this card can reach them. They are `font:`
+   shorthands like every other style in the build, carrying weight, size and
+   line height together — not `font-size:` overrides. */
+.land-intro { display: flex; flex-direction: column; align-items: center;
+  gap: var(--space-12); text-align: center;
+  --t-hero:      300 60px/68px var(--font-display);
+  /* one step tighter than Display/M's -0.03em. Tracking is the other lever on
+     apparent weight: closing the gaps makes a light cut read as a denser mass
+     of type rather than a row of thin strokes, and 60px has the room to take
+     it without the letters touching. */
+  --tr-hero:     -0.04em;
+  /* THE GREETING IS AN EYEBROW NOW, NOT A FIRST LINE. At the hero size it was
+     the same voice as the product's name and competed with it; at half the
+     size it does what it is actually for — leans in, says hello, and hands
+     over. Half of 60/68 is 30/34, which is Display/M exactly, so the step down
+     is a real interval rather than a chosen number. It keeps Aeonik, because
+     it is part of the heading, and Display/M's own tracking, because -0.04em
+     is a setting for 60px type and would crowd this. */
+  --t-hero-eyebrow: 300 30px/34px var(--font-display);
+  --t-hero-lede: 600 26px/36px var(--font); }
+.land-h { display: flex; flex-direction: column; align-items: center; margin: 0;
+  font: var(--t-hero); letter-spacing: var(--tr-hero); }
+/* ONE SIZE, TWO WEIGHTS OF ATTENTION. Both lines are the same hero size, so the
+   hierarchy a mock draws by shrinking the greeting is drawn here with tone: it
+   sits back at text/secondary, the name of the thing comes forward at
+   text/primary. BETA is a pill and not a parenthesis, because it qualifies the
+   product rather than continuing the sentence, and it keeps Label/L while the
+   title doubles — a qualifier that grows with its subject stops reading as a
+   qualifier. */
+.land-h-1 { font: var(--t-hero-eyebrow); letter-spacing: var(--tr-display-m); color: var(--text-secondary); }
+.land-h-2 { display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
+  gap: var(--space-12); color: var(--white); }
+.land-name { white-space: nowrap; }
+/* THE COMPANY IN CAPS AND BOLD, THE PRODUCT AS IT WAS. Two words, two jobs:
+   DISGUISE is a name you already know and it is set like one — Aeonik Bold,
+   uppercase, the mark on the box. `Productions` stays Light and mixed-case
+   because it is the part of the lockup that is new, and a light lowercase word
+   after a bold capital one reads as the thing being introduced rather than as
+   a second shout.
+
+   CAPS GET THEIR OWN TRACKING. -0.04em is a setting for 60px lowercase, where
+   the round shoulders leave gaps worth closing; uppercase stems are flat and
+   already sit close, so the same value crowds them. -0.02em holds the word
+   together without welding it. */
+.land-brand { font-weight: 700; text-transform: uppercase; letter-spacing: -0.02em; }
+.land-beta { font: var(--t-label-l); letter-spacing: var(--tr-label-l); font-style: normal;
+  text-transform: uppercase; color: var(--text-secondary); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill); padding: var(--space-6) var(--space-12); }
+.land-lede { margin: 0; font: var(--t-hero-lede); letter-spacing: var(--tr-title-s); color: var(--text-primary); }
+/* THE PARAGRAPH CAME BACK DOWN, AND LANDED ON THE RAMP. Half of 26/40 is
+   13/20, which is Body/L exactly — so the last line of the introduction needs
+   no local size at all and is simply the build's reading style again. That is
+   also the right shape for the block: the title and the claim are read from
+   across the room, the explanation is read by somebody who has already leaned
+   in, and 62ch is the measure that serves them. */
+.land-body { margin: 0; max-width: 62ch; font: var(--t-body-l); letter-spacing: var(--tr-body-l); color: var(--text-meta); }
+
+.land-opts { display: flex; gap: var(--space-16); width: 100%; align-items: stretch; }
+.land-opt { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center;
+  gap: var(--space-12); padding: var(--space-20) var(--space-16) var(--space-16);
+  border: 1px solid var(--border-subtle); border-radius: var(--radius-lg);
+  background: var(--surface-panel); position: relative; }
+.land-opt:hover { border-color: var(--border-strong); }
+/* the number is a piece of TYPE, not a badge: at Display/M it counts the options
+   from across the room, which is the whole job a step number has here. It sits
+   inside the card on the text's own edge rather than straddling the border —
+   two of these are a sequence, not two decorated boxes. */
+.land-n { align-self: flex-start; font: var(--t-display-m); letter-spacing: 0;
+  line-height: 1; color: var(--text-meta); }
+.land-t { font: var(--t-title-s); letter-spacing: var(--tr-title-s); color: var(--text-primary);
+  text-align: center; }
+/* the description carries the stretch, so both buttons sit on one line however
+   long the two sentences above them turn out to be */
+.land-d { font: var(--t-body-l); letter-spacing: var(--tr-body-l); color: var(--text-meta);
+  text-align: center; flex: 1; }
+.land-opt .demo { width: 100%; }
+/* NO LOCAL BUTTON STYLE. These were shrunk and set in sentence case while the
+   card was being trimmed, which made the two most important controls on the
+   first screen the only buttons in the build that do not look like the build's
+   buttons. They are plain `.cta` and `.cta.ghost` now — same size, same
+   padding, same uppercase label as ACCEPT, START PRODUCTION and every other
+   primary action. The markup keeps sentence case; `.cta` uppercases it. They
+   run the full width of their card, which is the mock's one real instruction
+   about them: the option IS the button, and the card is its hit area. */
+.land-opt .cta { width: 100%; }
+
+/* ---- the two looping demos ---- */
+.demo { position: relative; height: 104px; border-radius: var(--radius-md);
+  border: 1px dashed var(--border-subtle); background-color: var(--surface-sunken);
+  background-image: radial-gradient(circle at 1px 1px, var(--tint-dots) 1px, transparent 1.6px);
+  background-size: 12px 12px; overflow: hidden; }
+.dpan { position: absolute; border-radius: var(--radius-xs); background: var(--surface-panel);
+  border: 1px solid var(--border-strong); box-shadow: inset 0 4px 0 -2px var(--surface-raised); }
+.dcur { position: absolute; width: 7px; height: 7px; margin: -3px 0 0 -3px; border-radius: var(--radius-pill);
+  background: var(--text-primary); box-shadow: 0 0 0 3px var(--tint-emphasis-s); }
+
+.d1 .a { animation: d1a 7.2s cubic-bezier(.5, 0, .2, 1) infinite; }
+.d1 .b { animation: d1b 7.2s cubic-bezier(.5, 0, .2, 1) infinite; }
+.d1 .c { animation: d1c 7.2s cubic-bezier(.5, 0, .2, 1) infinite; }
+.d1 .dcur { animation: d1cur 7.2s cubic-bezier(.5, 0, .2, 1) infinite; }
+@keyframes d1a {
+  0%, 4%    { left: 14%; top: 18%; width: 0;   height: 0;   opacity: 0; }
+  7%        { left: 14%; top: 18%; width: 3%;  height: 5%;  opacity: 1; }
+  22%, 29%  { left: 14%; top: 18%; width: 50%; height: 54%; opacity: 1; }
+  37%, 53%  { left: 0;   top: 0;   width: 100%; height: 100%; opacity: 1; }
+  63%, 97%  { left: 0;   top: 0;   width: 47%; height: 100%; opacity: 1; }
+  100%      { left: 0;   top: 0;   width: 47%; height: 100%; opacity: 0; }
+}
+@keyframes d1b {
+  0%, 53%   { left: 53%; top: 0; width: 47%; height: 100%; opacity: 0; }
+  63%, 76%  { left: 53%; top: 0; width: 47%; height: 100%; opacity: 1; }
+  85%, 97%  { left: 53%; top: 0; width: 47%; height: 46%;  opacity: 1; }
+  100%      { left: 53%; top: 0; width: 47%; height: 46%;  opacity: 0; }
+}
+@keyframes d1c {
+  0%, 76%   { left: 53%; top: 54%; width: 47%; height: 46%; opacity: 0; }
+  85%, 97%  { left: 53%; top: 54%; width: 47%; height: 46%; opacity: 1; }
+  100%      { left: 53%; top: 54%; width: 47%; height: 46%; opacity: 0; }
+}
+@keyframes d1cur {
+  0%        { left: 14%; top: 18%; opacity: 0; transform: scale(1); }
+  5%        { left: 14%; top: 18%; opacity: 1; transform: scale(0.7); }
+  22%, 29%  { left: 64%; top: 72%; opacity: 1; transform: scale(0.7); }
+  32%       { left: 64%; top: 72%; opacity: 1; transform: scale(1); }
+  45%, 52%  { left: 97%; top: 93%; opacity: 1; transform: scale(1); }
+  55%       { left: 97%; top: 93%; opacity: 1; transform: scale(0.7); }
+  63%, 70%  { left: 50%; top: 62%; opacity: 1; transform: scale(0.7); }
+  73%       { left: 50%; top: 62%; opacity: 1; transform: scale(1); }
+  78%       { left: 97%; top: 93%; opacity: 1; transform: scale(1); }
+  80%       { left: 97%; top: 93%; opacity: 1; transform: scale(0.7); }
+  85%, 97%  { left: 76%; top: 50%; opacity: 1; transform: scale(0.7); }
+  100%      { left: 76%; top: 50%; opacity: 0; transform: scale(1); }
+}
+
+/* the rail, then what pressing one of it does */
+.d2rail { position: absolute; left: 0; top: 0; bottom: 0; width: 26%;
+  border-right: 1px solid var(--border-subtle); background: var(--surface-canvas);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; }
+.d2b { width: 60%; height: 13px; border-radius: var(--radius-xs);
+  border: 1px solid var(--border-subtle); background: var(--surface-panel); }
+.d2b.hit { animation: d2hit 7.2s ease-in-out infinite; }
+@keyframes d2hit {
+  0%, 18%   { background: var(--surface-panel); border-color: var(--border-subtle); }
+  24%, 94%  { background: var(--text-primary); border-color: var(--text-primary); }
+  100%      { background: var(--surface-panel); border-color: var(--border-subtle); }
+}
+.d2 .dcur { animation: d2cur 7.2s cubic-bezier(.5, 0, .2, 1) infinite; }
+@keyframes d2cur {
+  0%        { left: 8%; top: 88%; opacity: 0; transform: scale(1); }
+  5%        { left: 8%; top: 88%; opacity: 1; transform: scale(1); }
+  18%       { left: 13%; top: 50%; opacity: 1; transform: scale(1); }
+  23%, 94%  { left: 13%; top: 50%; opacity: 1; transform: scale(0.7); }
+  100%      { left: 13%; top: 50%; opacity: 0; transform: scale(1); }
+}
+.d2 .dpan { animation: d2in 7.2s cubic-bezier(.3, 1.3, .5, 1) infinite both; }
+.d2 .p1 { left: 30%; top: 6%;  width: 40%; height: 88%; }
+.d2 .p2 { left: 72%; top: 6%;  width: 26%; height: 27%; animation-delay: 0.14s; }
+.d2 .p3 { left: 72%; top: 36%; width: 26%; height: 27%; animation-delay: 0.28s; }
+.d2 .p4 { left: 72%; top: 67%; width: 26%; height: 27%; animation-delay: 0.42s; }
+@keyframes d2in {
+  0%, 23%   { opacity: 0; transform: translateY(7px) scale(0.94); }
+  32%, 94%  { opacity: 1; transform: none; }
+  100%      { opacity: 0; transform: none; }
+}
+
+/* the rubber band, over the card and under nothing */
+.land-band { position: absolute; top: 0; left: 0; z-index: 46; pointer-events: none;
+  border: 1px dashed var(--border-strong); border-radius: var(--radius-md);
+  background: var(--tint-emphasis-s); display: flex; align-items: center; justify-content: center; }
+.land-band.ok { border-style: solid; border-color: var(--border-emphasis); background: var(--tint-emphasis); }
+.land-band-t { font: var(--t-label-s); letter-spacing: var(--tr-label-s); text-transform: uppercase;
+  color: var(--text-primary); background: var(--surface-raised); border-radius: var(--radius-xs);
+  padding: var(--space-2) var(--space-6); white-space: nowrap; }
+
+/* "it is over there on the left" is the weakest instruction in any interface,
+   so the thing over there on the left answers when the card is pressed */
+.rl-tasks-wrap.pulse { animation: railpulse 640ms ease-in-out 4; border-radius: var(--radius-md); }
+@keyframes railpulse { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 3px var(--tint-emphasis); } }
+.rl-tasks-wrap.pulse .tk-btn:not(:disabled) { animation: tkflash 640ms ease-in-out 4; }
+@keyframes tkflash {
+  0%, 100% { border-color: var(--border-subtle); color: var(--text-secondary); }
+  50%      { border-color: var(--border-emphasis); color: var(--text-primary); }
+}
+
+@media (max-width: 900px) { .land-opts { flex-direction: column; } .demo { height: 88px; } }
+@media (prefers-reduced-motion: reduce) {
+  .d1 .a, .d1 .b, .d1 .c, .d1 .dcur, .d2 .dpan, .d2 .dcur, .d2b.hit,
+  .rl-tasks-wrap.pulse, .rl-tasks-wrap.pulse .tk-btn { animation: none !important; }
+  .d1 .dcur, .d2 .dcur { display: none; }
+  .d1 .a { left: 0; top: 0; width: 47%; height: 100%; }
+  .d1 .b { left: 53%; top: 0; width: 47%; height: 46%; }
+  .d1 .c { left: 53%; top: 54%; width: 47%; height: 46%; }
+  .d2 .dpan { opacity: 1; }
+  .d2b.hit { background: var(--text-primary); border-color: var(--text-primary); }
+  .rl-tasks-wrap.pulse .tk-btn:not(:disabled) { border-color: var(--border-emphasis); color: var(--text-primary); }
+}
 
 /* ---------- guide gating: every explanatory element hides when it is off ---------- */
 body.noguide .purpose, body.noguide .qr, body.noguide .hint { display: none !important; }
@@ -1649,6 +2182,10 @@ body.noguide .purpose, body.noguide .qr, body.noguide .hint { display: none !imp
 .vopt { padding: var(--space-8) var(--space-10); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--surface-sunken); font: var(--t-body-s); line-height: 1; letter-spacing: var(--tr-body-s); color: var(--text-secondary); cursor: pointer; text-align: left; }
 .vopt:hover { color: var(--text-primary); border-color: var(--border-strong); }
 .vopt.on { background: var(--surface-emphasis); color: var(--text-on-emphasis); border-color: var(--border-strong); }
+/* an action that cannot be taken stops looking like one — and stops answering the
+   pointer, so the cursor says it before the click does */
+.vopt:disabled { opacity: 0.45; cursor: not-allowed; background: transparent; color: var(--text-meta); }
+.vopt:disabled:hover { color: var(--text-meta); border-color: var(--border-subtle); }
 /* Input — the component. */
 .num { background: var(--surface-sunken); border: 1px solid var(--border-subtle); border-radius: var(--radius-field); padding: var(--space-8) var(--space-8); color: var(--text-primary); font: var(--t-body-m); line-height: 1; width: 100%; }
 
@@ -1689,6 +2226,13 @@ body.noguide .purpose, body.noguide .qr, body.noguide .hint { display: none !imp
    So the row is a container, the two actions are real buttons, and neither of them
    is a surprise. Hover still lifts the border, because the row holds controls; it
    no longer shows a pointer, because the row itself no longer promises anything. */
+/* WHAT A SWAP WOULD LAND ON. Named above the catalogue rather than left to the
+   button to imply, because respeccing the wrong head is cheap to do and annoying
+   to undo. */
+.lib-sel { margin: 0; padding: var(--space-6) var(--space-8); border-radius: var(--radius-sm);
+  background: var(--surface-sunken); border: 1px solid var(--border-subtle);
+  font: var(--t-body-s); letter-spacing: var(--tr-body-s); color: var(--text-meta); }
+.lib-sel b { color: var(--text-primary); font-weight: 600; }
 .lib { display: flex; align-items: center; gap: var(--space-8); width: 100%; text-align: left; padding: var(--space-6) var(--space-8) var(--space-6) var(--space-4); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--surface-sunken); color: var(--text-secondary); }
 .lib:hover { border-color: var(--border-emphasis); color: var(--text-primary); }
 .lib.has { border-color: var(--border-strong); }
@@ -2194,8 +2738,7 @@ body.noguide .purpose, body.noguide .qr, body.noguide .hint { display: none !imp
       <template v-if="prodMenu">
         <div class="pc-pick-scrim" @pointerdown.stop="prodMenu = false"></div>
         <div class="tb-prodmenu" @pointerdown.stop @click.stop>
-          <span class="tb-prodh">PRODUCTIONS · {{ prods.length }}</span>
-          <template v-for="p in prods" :key="p.id">
+          <div class="tb-prodgrp" :class="{ on: prodId === p.id }" v-for="p in prods" :key="p.id">
             <!-- selecting the job you are already in did NOTHING and said
                  nothing, which reads as a broken menu rather than as "you are
                  already here". It closes and says so. -->
@@ -2219,7 +2762,7 @@ body.noguide .purpose, body.noguide .qr, body.noguide .hint { display: none !imp
               <span class="tb-prodi-n"><b>{{ t.name }}</b><i>{{ takePct(t) }}% · {{ isLive(t) ? 'the baseline' : 'an option' }}</i></span>
               <ic v-if="takeId === t.id" n="check"></ic>
             </button>
-          </template>
+          </div>
           <!-- THE SKETCH HAD NO DOOR. `newSketch` ran once, at boot, and was
                reachable from nothing: promote the seeded sketch and the
                draw-first way in was gone for the rest of the session, with no
@@ -2280,6 +2823,10 @@ body.noguide .purpose, body.noguide .qr, body.noguide .hint { display: none !imp
             :disabled="!prod" @click="settingsOpen = true"><ic n="settings"></ic></button>
   </div>
 
+  <!-- the one announcement that is about the production rather than about a
+       panel, so it is said once, here, across the whole window -->
+  <baseline-band></baseline-band>
+
   <div style="flex: 1; display: flex; min-height: 0;">
     <!-- rail — PRODUCTION over TAKE. Tasks never appear here; they live in the grid. -->
     <div class="rail">
@@ -2330,7 +2877,7 @@ body.noguide .purpose, body.noguide .qr, body.noguide .hint { display: none !imp
       <!-- WHAT ARE YOU DOING? Six buttons, in the middle of the rail, each one a
            workspace. Pressing one rearranges the panels and touches nothing else —
            see `applyTask`. -->
-      <div class="rl rl-tasks-wrap" data-tour="tasks" style="margin-top: auto;">
+      <div class="rl rl-tasks-wrap" data-tour="tasks" :class="{ pulse: railPulse }" style="margin-top: auto;">
         <span class="rl-h">What are you doing?</span>
         <div class="rl-tasks">
           <button v-for="t in TASKS" :key="t.key" class="tk-btn" :data-tour-task="t.key"
@@ -2400,7 +2947,12 @@ body.noguide .purpose, body.noguide .qr, body.noguide .hint { display: none !imp
     </div>
 
     <!-- tiled panels -->
-    <div ref="tileEl" data-tour="tiles" style="flex: 1; position: relative; min-width: 0; min-height: 0; overflow: hidden; background: var(--gray-900);">
+    <!-- `.self` matters: the drag-to-draw gesture belongs to the CANVAS, and a
+         pointerdown that started on the onboarding card, a panel or the band must
+         not be caught here as well. The card starts its own draw — see `.land-card`. -->
+    <div ref="tileEl" data-tour="tiles" class="pc-field" :class="{ empty: emptyWorkspace }"
+         @pointerdown.self="startDraw($event)"
+         style="flex: 1; position: relative; min-width: 0; min-height: 0; overflow: hidden;">
       <!-- minimised: header only, space handed back to the siblings -->
       <div v-for="a in minList" :key="'m' + a.id" class="pc-min" :class="a.axis === 'row' ? 'row' : 'col'"
            v-show="!maximizedId"
@@ -2485,8 +3037,17 @@ body.noguide .purpose, body.noguide .qr, body.noguide .hint { display: none !imp
             <button v-for="j in eligibleJoins(a.id)" :key="'j' + j.targetId" @click="joinAreas(a.id, j.targetId)">Merge {{ j.side }} ({{ j.title }})</button>
             <button v-for="j in eligibleJoins(a.id)" :key="'s' + j.targetId" @click="swapAreas(a.id, j.targetId)">Swap {{ j.side }} ({{ j.title }})</button>
             <button @click="hoverArea = a.id; toggleMax(); menuFor = null">{{ maximizedId === a.id ? 'Restore' : 'Maximise' }}</button>
+            <!-- `task`, not `s.task`. The root binds `...toRefs(s)`, so the state's
+                 own properties are exposed one by one and the object itself never
+                 is — `s` was undefined here, and reading `.task` off it threw
+                 while the menu rendered, which blanked the entire app the first
+                 time anybody opened a panel menu. Every other template in this
+                 file already uses the unwrapped names. -->
+            <!-- a saved workspace has a default of its own — the panels you saved under
+                 that name — so it gets the same wording as a task rather than being
+                 offered the checklist's cluster, which is not what RESET would do. -->
             <button @click="resetLayout(); menuFor = null"
-                    :title="s.task ? 'Put this workspace back to the panels it ships with' : 'Back to the cluster this checklist calls up'">{{ s.task ? 'Reset this workspace' : 'Reset layout' }}</button>
+                    :title="task || preset ? 'Put this workspace back to the panels it ships with' : 'Back to the cluster this checklist calls up'">{{ task || preset ? 'Reset this workspace' : 'Reset layout' }}</button>
           </div>
         </header>
         <div class="pc-area-bd" :style="isBound(a.node) ? { pointerEvents: 'none' } : null">
@@ -2520,6 +3081,66 @@ body.noguide .purpose, body.noguide .qr, body.noguide .hint { display: none !imp
         <div v-if="swap.over && swap.over !== swap.from" class="pc-tint" :style="tintStyle(swap.over, 0.16)"><span class="pc-chevron"><ic n="compare_arrows"></ic></span></div>
         <div v-if="swap.from && swap.over" class="pc-tint" :style="tintStyle(swap.from, 0.08)"></div>
       </div>
+
+      <!-- ============ THE EMPTY LANDING ============
+           No panels, and that is the first thing the workspace has to explain
+           rather than the first thing it has to hide. Two routes off it, both
+           the real mechanism: draw one panel and split it, or press a task and
+           take the cluster somebody already worked out.
+
+           The layer is `pointer-events: none` so that a drag started on the
+           bare canvas around the card still reaches the canvas; the card takes
+           its own pointer events back, and starts a draw too, because a person
+           aiming at "drag anywhere" should not have to avoid the sentence that
+           told them to. ========================================= -->
+      <div v-if="emptyWorkspace" class="landing" data-tour="landing">
+        <div class="land-card" @pointerdown="startDraw($event)">
+          <div class="land-intro">
+            <h1 class="land-h">
+              <span class="land-h-1">Welcome to</span>
+              <span class="land-h-2"><span class="land-name"><span class="land-brand">Disguise</span> Productions</span> <em class="land-beta">Beta</em></span>
+            </h1>
+            <p class="land-lede">One production. Many takes. Every decision connected.</p>
+            <p class="land-body">Create your workspace with panels for the tools you need. As the
+              show evolves, Productions keeps everything in sync — creative, technical and
+              commercial.</p>
+          </div>
+
+          <div class="land-opts">
+            <div class="land-opt">
+              <span class="land-n">01</span>
+              <div class="demo d1" aria-hidden="true">
+                <i class="dpan a"></i><i class="dpan b"></i><i class="dpan c"></i><i class="dcur"></i>
+              </div>
+              <span class="land-t">Start from scratch</span>
+              <span class="land-d">Build a workspace your way.<br>Click &amp; Drag to add the panels you need.</span>
+              <button class="cta" @pointerdown.stop @click="firstPanel()"
+                      title="Same thing the drag does — makes one panel and asks what it should be">New workspace</button>
+            </div>
+
+            <div class="land-opt">
+              <span class="land-n">02</span>
+              <div class="demo d2" aria-hidden="true">
+                <div class="d2rail"><i class="d2b"></i><i class="d2b hit"></i><i class="d2b"></i></div>
+                <i class="dpan p1"></i><i class="dpan p2"></i><i class="dpan p3"></i><i class="dpan p4"></i>
+                <i class="dcur"></i>
+              </div>
+              <span class="land-t">Start with a workspace</span>
+              <span class="land-d">Choose a workspace setup for your current task and get going faster.</span>
+              <button class="cta ghost" @pointerdown.stop @click="pulseTasks()"
+                      title="Flash the task buttons in the rail"><ic n="chevron_left"></ic>Choose a task</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- what you are drawing, while you draw it, saying before you let go
+           whether letting go here would make anything -->
+      <div v-if="drawBox.on" class="land-band" :class="{ ok: drawBox.ok }"
+           :style="{ transform: 'translate(' + drawBox.x + 'px,' + drawBox.y + 'px)',
+                     width: drawBox.w + 'px', height: drawBox.h + 'px' }">
+        <span class="land-band-t">{{ drawBox.ok ? 'Release to make a panel' : 'Keep dragging' }}</span>
+      </div>
     </div>
   </div>
 
@@ -2537,6 +3158,51 @@ body.noguide .purpose, body.noguide .qr, body.noguide .hint { display: none !imp
         <button class="pc-iconbtn x" title="Close" @click="settingsOpen = false"><ic n="close"></ic></button>
       </div>
       <div class="set-modal-bd"><ed-settings></ed-settings></div>
+    </div>
+  </div>
+
+  <!-- ==================================================================
+       THE APPROVAL, PUT IN FRONT OF THE PERSON WHO OWES IT.
+       Not a badge somewhere, not a row in a list: a proposal is somebody
+       waiting on you, so it is the first thing you see when you open the
+       production as the person who can settle it. It can be set aside —
+       "not now" — because a modal you cannot leave is a modal people learn
+       to dismiss without reading. Setting it aside does not decide it; the
+       proposal stands and the band at the top of the log keeps saying so.
+       ================================================================== -->
+  <div v-if="pendingForMe && !approvalAside" class="mask">
+    <div class="modal" style="width: min(520px, 94vw);">
+      <div class="modal-hd">
+        <span style="font: var(--t-label-l); letter-spacing: var(--tr-label-l); color: var(--text-primary);">APPROVE A NEW BASELINE</span>
+        <p class="mq"><strong>{{ memberName(pendingForMe.by) }}</strong> proposes
+          <strong>{{ takeName(pendingForMe.takeId) }}</strong> as the version everybody works to.</p>
+      </div>
+      <div class="modal-bd">
+        <div class="callout">
+          <span style="font: var(--t-body-l); letter-spacing: var(--tr-body-l); color: var(--text-primary);">You are asked because you are the <strong>{{ (ACCESS_BY[(memberOf(who.me) || {}).access] || {}).label }}</strong> — and because nobody approves their own proposal, whatever their rank.</span>
+        </div>
+        <div style="display: flex; gap: var(--space-8);">
+          <div class="callout" style="flex: 1; align-items: center; gap: var(--space-2);">
+            <span style="font: var(--t-display-m); letter-spacing: var(--tr-display-m); color: var(--status-complete);">{{ promotionDiff(pendingForMe.takeId).keep }}</span>
+            <span class="k-label" style="text-align: center;">would still stand</span>
+          </div>
+          <div class="callout" style="flex: 1; align-items: center; gap: var(--space-2);">
+            <span style="font: var(--t-display-m); letter-spacing: var(--tr-display-m);" :style="{ color: promotionDiff(pendingForMe.takeId).reopen ? 'var(--status-progress)' : 'var(--text-meta)' }">{{ promotionDiff(pendingForMe.takeId).reopen }}</span>
+            <span class="k-label" style="text-align: center;">rest on changed decisions</span>
+          </div>
+        </div>
+        <div class="callout">
+          <span class="k-label">IF YOU TURN IT DOWN</span>
+          <span style="font: var(--t-body-s); letter-spacing: var(--tr-body-s); color: var(--text-meta);">Nothing is destroyed. {{ takeName(pendingForMe.takeId) }} keeps every decision and every closed task and goes back to being an option — only the claim on the baseline is withdrawn. Say why, and {{ memberName(pendingForMe.by) }} can rework it and ask again.</span>
+          <input class="tin" v-model="rejectNote" maxlength="80" placeholder="WHY NOT — OPTIONAL, AND READ BY THE PERSON WHO ASKED">
+        </div>
+      </div>
+      <div class="modal-ft">
+        <button class="vopt" @click="approvalAside = true">NOT NOW</button>
+        <div style="flex: 1;"></div>
+        <button class="vopt" @click="rejectBaseline(rejectNote); rejectNote = ''">REJECT</button>
+        <button class="cta" @click="approveBaseline(); rejectNote = ''">APPROVE &amp; SET AS BASELINE</button>
+      </div>
     </div>
   </div>
 
@@ -2566,6 +3232,20 @@ body.noguide .purpose, body.noguide .qr, body.noguide .hint { display: none !imp
           </div>
           <!-- WHO FINDS OUT, AND HOW. A baseline that other departments discover
                by accident is not a baseline; it is a surprise. -->
+          <!-- WHO ACTUALLY DECIDES. A baseline is not one person's call, so the
+               dialog names the people it is about to wait on rather than
+               implying the press of this button settles it. -->
+          <div class="callout">
+            <span class="k-label">IT NEEDS APPROVING FIRST</span>
+            <div style="display: flex; align-items: center; gap: var(--space-6); flex-wrap: wrap;">
+              <av v-for="m in approversFor(prod ? prod.id : '', who.me)" :key="'ap' + m.id" :who="m.id" size="s"></av>
+              <span style="font: var(--t-body-s); letter-spacing: var(--tr-body-s); color: var(--text-meta);">
+                <template v-if="approversFor(prod ? prod.id : '', who.me).length">{{ approversFor(prod ? prod.id : '', who.me).map(m => m.name).join(' or ') }} — owner or admin, and never you</template>
+                <template v-else>nobody else can approve this yet</template>
+              </span>
+            </div>
+            <span style="font: var(--t-body-s); letter-spacing: var(--tr-body-s); color: var(--text-meta);">Your own rank does not settle it. Whoever approves is asked the moment they open the production, and the decision is recorded with their name on it.</span>
+          </div>
           <div class="callout">
             <span class="k-label">EVERYBODY IS TOLD</span>
             <div style="display: flex; align-items: center; gap: var(--space-6); flex-wrap: wrap;">
@@ -2607,7 +3287,7 @@ body.noguide .purpose, body.noguide .qr, body.noguide .hint { display: none !imp
         <div style="flex: 1;"></div>
         <button class="cta ghost" style="padding: var(--space-10) var(--space-16);" @click="dialog.kind = null">Cancel</button>
         <button v-if="dialog.kind === 'delete' || dialog.kind === 'delprod'" class="cta bad" @click="confirmDelete">{{ dialog.kind === 'delprod' ? 'Close production' : 'Delete take' }}</button>
-        <button v-else-if="dialog.kind === 'pin'" class="cta" @click="doGoLive">Set as baseline &amp; notify</button>
+        <button v-else-if="dialog.kind === 'pin'" class="cta" @click="proposeBaseline">Propose as baseline →</button>
         <button v-else-if="dialog.kind === 'preset'" class="cta" @click="doSavePreset">Save workspace</button>
         <button v-else class="cta" @click="doFork">Fork take</button>
       </div>

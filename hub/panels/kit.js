@@ -1,8 +1,42 @@
 import {
   CAMERA_LIB, PROJECTOR_LIB, addDevice, app, armInScene, cellKey, computed, costOf,
-  focusObj, inScene, money, num, panelCtx, s, setReq, take,
+  focusObj, inScene, money, num, panelCtx, s, setReq, setValue, take,
   thumbOf, toast,
 } from '../core.js';
+
+/* ---- SWAPPING THE MODEL OF SOMETHING ALREADY RIGGED ----------------------
+   The libraries could ADD a device and SELECT one, and could not CHANGE one:
+   deciding a projector already in the room should be a Barco instead meant
+   finding its create step in the Work panel, which is the one place nobody
+   looks when they are staring at the catalogue. The decision belongs where the
+   alternatives are listed.
+
+   It is not a new kind of edit. A device's model IS its `create` step value, so
+   this writes the same value the checklist writes, through the same `setValue`
+   — which means it is priced, logged, attributed and undoable exactly like
+   every other spec decision, with no second path to keep in step. The library
+   row gains an action, not a mechanism. */
+function makeSwap(req, label) {
+  const modelOf = (t, o) => (t && o) ? t.values[cellKey(o.id, req + '.create')] : null;
+  /* only the thing the Scene Study is showing as selected, and only when it is
+     one of OURS — a camera selected while the projector library is open is not a
+     projector this panel may respec */
+  const selected = (T) => {
+    const t = T.value;
+    const o = t && t.objects.find(x => x.id === t.focus.obj);
+    return (o && o.req === req) ? o : null;
+  };
+  const swap = (T, m) => {
+    const t = T.value, o = selected(T);
+    if (!o) return toast('Select a ' + label + ' in the Scene Study first — then this swaps it.');
+    const was = modelOf(t, o);
+    if (was === m.name) return toast(o.label + ' is already a ' + m.name + '.');
+    setValue(o.id, req + '.create', m.name);
+    toast(o.label + ' is now a ' + m.name + (was ? ' — was a ' + was : '') +
+          '. Its cost, draw and weight are re-read from the catalogue.');
+  };
+  return { modelOf, selected, swap };
+}
 
 app.component('ed-projlib', {
   setup() {
@@ -30,11 +64,19 @@ app.component('ed-projlib', {
       ctx.focusObj(o.id);
       if (list.length > 1) toast(o.label + ' selected · ' + (list.indexOf(o) + 1) + ' of ' + list.length + ' ' + m.name);
     };
-    return { ...ctx, rows, place, pick, isSel };
+    const SW = makeSwap('projectors', 'projector');
+    const selO = computed(() => SW.selected(ctx.take));
+    const selModel = computed(() => SW.modelOf(ctx.take.value, selO.value));
+    return { ...ctx, rows, place, pick, isSel, selO, selModel, swap: (m) => SW.swap(ctx.take, m) };
   },
   template: `
 <div class="pad" style="gap: var(--space-8);">
   <p class="purpose" style="">Pick a projector — it drops straight into the <strong>Scene Study</strong> with its own checklist.</p>
+  <!-- WHAT THE SWAP WILL LAND ON, said before you press it. A respec is cheap to
+       do and expensive to do to the wrong head, so the panel names the head it is
+       holding rather than leaving the button to imply one. -->
+  <p v-if="selO" class="lib-sel"><b>{{ selO.label }}</b> selected<template v-if="selModel"> · {{ selModel }}</template>
+    — swap it for any model below</p>
   <div style="display: flex; flex-direction: column; gap: var(--space-4);">
     <div v-for="m in rows" :key="m.name" class="lib" :class="{ has: m.n, pickable: m.n, sel: isSel(m) }"
          :title="m.n ? 'Select this projector in the Scene Study' + (m.n > 1 ? ' — click again for the next one' : '') : ''"
@@ -49,6 +91,9 @@ app.component('ed-projlib', {
       </span>
       <span class="lib-c">{{ money(m.cost) }}</span>
       <span class="lib-acts">
+        <button v-if="selO && selModel !== m.name" class="rl-ic" 
+                :title="'Make ' + selO.label + ' a ' + m.name + ' — its cost, draw and weight are re-read from the catalogue'"
+                @click.stop="swap(m)"><ic n="compare_arrows"></ic></button>
         <button class="rl-ic" title="Add one — click in the Scene Study to place it" @click.stop="place(m)"><ic n="add"></ic></button>
       </span>
     </div>
@@ -85,11 +130,16 @@ app.component('ed-camlib', {
       ctx.focusObj(o.id);
       if (list.length > 1) toast(o.label + ' selected · ' + (list.indexOf(o) + 1) + ' of ' + list.length + ' ' + m.name);
     };
-    return { ...ctx, rows, place, pick, isSel };
+    const SW = makeSwap('capture', 'camera');
+    const selO = computed(() => SW.selected(ctx.take));
+    const selModel = computed(() => SW.modelOf(ctx.take.value, selO.value));
+    return { ...ctx, rows, place, pick, isSel, selO, selModel, swap: (m) => SW.swap(ctx.take, m) };
   },
   template: `
 <div class="pad" style="gap: var(--space-8);">
   <p class="purpose" style="">Pick a camera — it lands in the <strong>Scene Study</strong> and gets its own POV.</p>
+  <p v-if="selO" class="lib-sel"><b>{{ selO.label }}</b> selected<template v-if="selModel"> · {{ selModel }}</template>
+    — swap it for any model below</p>
   <div style="display: flex; flex-direction: column; gap: var(--space-4);">
     <div v-for="m in rows" :key="m.name" class="lib" :class="{ has: m.n, pickable: m.n, sel: isSel(m) }"
          :title="m.n ? 'Select this camera in the Scene Study' + (m.n > 1 ? ' — click again for the next one' : '') : ''"
@@ -104,6 +154,9 @@ app.component('ed-camlib', {
       </span>
       <span class="lib-c">{{ money(m.cost) }}</span>
       <span class="lib-acts">
+        <button v-if="selO && selModel !== m.name" class="rl-ic"
+                :title="'Make ' + selO.label + ' a ' + m.name + ' — its cost, draw and weight are re-read from the catalogue'"
+                @click.stop="swap(m)"><ic n="compare_arrows"></ic></button>
         <button class="rl-ic" title="Add one — click in the Scene Study to place it" @click.stop="place(m)"><ic n="add"></ic></button>
       </span>
     </div>

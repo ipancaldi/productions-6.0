@@ -1,5 +1,5 @@
 import {
-  MEMBERS, REQS, affectedBy, app, computed, makeMember, memberOf, panelCtx, prodOf, reactive, ref, restoreToChange, s, toast,
+  MEMBERS, REQS, affectedBy, app, computed, isLive, makeBaseline, makeMember, memberOf, panelCtx, prodOf, reactive, ref, restoreToChange, s, toast,
 } from '../core.js';
 import { LOG, changes, who, hhmm, dayOf, FIGURES,
          exportCSV, exportMarkdown, download,
@@ -33,7 +33,15 @@ app.component('ed-history', {
       if (!objId) return '';
       const t = takeOf(takeId);
       const o = t && t.objects.find(x => x.id === objId);
-      return o ? o.label : objId.toUpperCase().replace('-', ' ');
+      if (o) return o.label;
+      /* A DRAWN THING IS A THING TOO. Solids were already reaching the log —
+         every shape the agent places and every shape moved in the room records
+         against a solid id — and every one of them printed as `SOL 3`, because
+         only the device list was searched. The wall somebody re-tiled should
+         read by the name it wears in the room. */
+      const sol = t && (t.solids || []).find(x => x.id === objId);
+      if (sol) return sol.name || sol.role || objId.toUpperCase();
+      return objId.toUpperCase().replace('-', ' ');
     };
     const stepLabel = (takeId, stepId) => {
       if (!stepId) return '';
@@ -65,10 +73,82 @@ app.component('ed-history', {
         case 'assign':   return { verb: 'ASSIGNED', what: st, from: null, to: nameOfWho(e.to) };
         case 'deadline': return { verb: 'DEADLINE', what: st, from: e.from, to: e.to };
         case 'fork':     return { verb: 'FORKED', what: e.to, from: e.from, to: null };
-        case 'live':     return e.to ? { verb: 'WENT LIVE', what: e.to, from: e.from, to: null }
-                                     : { verb: 'STOOD DOWN', what: e.from, from: null, to: null };
+        /* the two halves of a baseline decision. `to` on a reject is the person
+           who asked, because the useful fact is who has to hear the answer. */
+        case 'propose':  return { verb: 'PROPOSED', what: e.to + ' as the baseline', from: null, to: null };
+        case 'reject':   return { verb: 'NOT APPROVED', what: e.from, from: null, to: e.note || null };
+        /* a baseline that was approved says so, and says by whom it was asked —
+           the decision took two people and the row should not credit one */
+        case 'live':     return e.to
+          ? (e.note ? { verb: 'APPROVED', what: e.to + ' as the baseline — proposed by ' + nameOfWho(e.note), from: null, to: null }
+                    : { verb: 'BASELINE', what: e.to, from: e.from, to: null })
+          : { verb: 'STOOD DOWN', what: e.from, from: null, to: null };
+        /* AN OP HAD NO LINE, so it fell through to the default and printed the
+           literal kind — `OP` — against a blank middle column, while `note`,
+           the one field that says WHAT IT WAS (SHAPE, VENUE, STAGE MOVED,
+           CLEARED), was dropped on the floor. That is the whole reason a wall
+           of rows read "OP … stage": every one of them was carrying its own
+           description and none of them were printing it. */
+        case 'op': {
+          const named = [st, o].filter(Boolean).join(' · ');
+          return { verb: e.note || 'OP',
+                   what: named || e.to || '',
+                   from: e.from,
+                   /* an op that named nothing but its value has already spent
+                      that value as its subject — printing it twice reads as a
+                      change from a thing to itself */
+                   to: named && e.to !== e.obj ? e.to : null };
+        }
         default:         return { verb: e.kind.toUpperCase(), what: st || o, from: e.from, to: e.to };
       }
+    };
+
+    /* ---- THE SAME EDIT, THIRTY-THREE TIMES ------------------------------
+       Thirty-two shapes called `stage` arrive as thirty-two entries, and the
+       detail printed one row each: a column of identical lines that a reader
+       has to count by eye to learn the only fact in them, which is HOW MANY.
+       A row is folded by what it SAYS — the verb and the thing — so the log
+       reports "SHAPE · stage ×32" and the thirty-third, the one that was an
+       `led`, stays visible instead of being lost in the run.
+
+       Two kinds of repeat, and they must not be summarised the same way:
+         · a LIST (adds, removes, agent ops, media, cues) is a run of separate
+           things, so the values are a tally — `stage ×32, led`. Reading them
+           as a journey would print `stage → led`, which asserts a change that
+           never happened.
+         · a JOURNEY (a value, a move, a status) is one thing in successive
+           states, so the FIRST from and the LAST to are kept and the row still
+           reads `20 → 26`, the same bargain `record` already strikes when it
+           coalesces a drag.
+       Folded at render, never stored: the log keeps every edit, and the export
+       still writes one row per edit, because evidence is what an export is
+       for. ------------------------------------------------------------- */
+    const LISTY = new Set(['add', 'remove', 'op', 'media', 'cue', 'fork']);
+    const foldRows = (c) => {
+      const out = [], by = new Map();
+      c.entries.forEach(e => {
+        const l = line(e);
+        const key = e.kind + '|' + l.verb + '|' + (l.what || '');
+        let r = by.get(key);
+        if (!r) {
+          r = { key, kind: e.kind, verb: l.verb, what: l.what, listy: LISTY.has(e.kind),
+                from: l.from, to: l.to, vals: [], n: 0, hits: 0, first: e };
+          by.set(key, r); out.push(r);
+        }
+        r.n++; r.hits += (e.hits || 1);
+        r.to = l.to;                       // a journey ends where it was left
+        if (l.to != null && l.to !== '') r.vals.push(String(l.to));
+      });
+      return out;
+    };
+    /* the tally, most-repeated first, capped — a summary that runs off the row
+       is the same problem in a shorter font */
+    const valSummary = (r) => {
+      const n = new Map();
+      r.vals.forEach(v => n.set(v, (n.get(v) || 0) + 1));
+      const parts = [...n].sort((a, b) => b[1] - a[1])
+                          .map(([v, k]) => k > 1 ? v + ' ×' + k : v);
+      return parts.slice(0, 3).join(', ') + (parts.length > 3 ? ' +' + (parts.length - 3) + ' more' : '');
     };
 
     const list = computed(() => {
@@ -119,6 +199,61 @@ app.component('ed-history', {
     const landsOn = (c) => affectedBy(reqsOfChange(c), c.who);
     const onMe = (c) => landsOn(c).some(m => m.id === who.me);
 
+    /* ---- THE DIVERGENCE, AS A STATE THE READER CAN ACT ON ---------------
+       Going back and then working is the one thing a take can do that leaves it
+       provisional in a way nobody is told about: the changes are real, the
+       route is real, and whether the team has agreed to it is a separate
+       question with an answer already in the model — is this take the baseline.
+       So the band says how far the take has run since it diverged, and whether
+       that has been agreed, and offers the SAME action the top bar does rather
+       than inventing an approval of its own. */
+    /* ---- A FORK IS A ROUTE TOO, AND A LONGER ONE ------------------------
+       Going back inside a take opens a route; forking opens a whole take, and
+       WHOLE PRODUCTION shows both takes' changes in one list. Drawn flat they
+       interleave by time and the reader cannot tell which line they are reading
+       — the fork row scrolls past as one more entry and everything after it
+       looks like a continuation of the take it left.
+
+       So a take's changes are indented by how far its take sits from the trunk:
+       one step per fork in its lineage. The depth is a property of the TAKE, not
+       of the change, which is why it is read off `forkedFrom` and not off the
+       log. Capped, and only meaningful in the production-wide view — inside one
+       take every change is on the same line by definition. */
+    const takeDepth = (takeId) => {
+      let d = 0, t = takeOf(takeId);
+      while (t && t.forkedFrom && d < 4) { t = takeOf(t.forkedFrom); d++; }
+      return scope.value === 'prod' ? d : 0;
+    };
+    /* the indent a row actually gets: how far its take is from the trunk, plus
+       the step that pushes replaced work off the line it no longer belongs to */
+    const rowDepth = (c) => Math.min(takeDepth(c.takeId) + (c.branch || 0), 4);
+    /* ---- THE LINE YOU ARE STANDING ON ------------------------------------
+       This was drawn the wrong way round first: the fork was dashed because it
+       was not the baseline. But the reader is IN the fork — it is the take they
+       opened, the one their edits land in — and drawing their own line as the
+       provisional one made the log read as somebody else's history with their
+       work annotated onto it.
+
+       So the active route is whichever take is open: one continuous, solid,
+       full-strength line, indented if that take is a fork. Every other take is
+       dashed and dimmed — still legible, plainly not what you are working on.
+       Being the baseline does not enter into it; that is a different question,
+       answered by the band and by the rail. */
+    const onRoute = (c) => { const t = T.value; return !!t && c.takeId === t.id; };
+    const offRoute = (c) => !onRoute(c) && scope.value === 'prod';
+    const forkOf = (c) => (c.entries.length === 1 && c.entries[0].kind === 'fork') ? c.entries[0] : null;
+    const soleOf = (c, kind) => (c.entries.length === 1 && c.entries[0].kind === kind) ? c.entries[0] : null;
+    const proposeOf = (c) => soleOf(c, 'propose');
+    const rejectOf = (c) => soleOf(c, 'reject');
+    const liveOf = (c) => soleOf(c, 'live');
+
+    const divergedCount = computed(() => list.value.filter(c => c.diverged).length);
+    const agreed = computed(() => { const t = T.value; return !!(t && isLive(t)); });
+    const settle = () => makeBaseline();
+
+    /* your own colour, the one your avatar already wears — so "these are mine"
+       is answered by the same cue in both places rather than by a second legend */
+    const myHue = computed(() => (memberOf(who.me) || {}).hue ?? 210);
     const prodId = computed(() => { const t = T.value; return t ? t.prodId : null; });
     const watermark = computed(() => seenAt(who.me, prodId.value));
     const isNew = (c) => c.n > watermark.value && c.who !== who.me;
@@ -142,16 +277,20 @@ app.component('ed-history', {
       ? c.entries[0] : null;
 
     const sel = ref(null);
-    /* which abandoned routes are unfolded — closed by default, because the
-       point of folding them is that they are no longer what the take is */
-    const forks = ref({});
-    /* the live route, plus any dead route the reader has asked to see */
+    /* WHAT YOU LEFT BEHIND IS STILL WHAT YOU DID. Abandoned routes used to be
+       hidden and summarised as "3 changes replaced", which answered how many
+       and never what — so going back deleted the record from view at exactly
+       the moment somebody would want to compare the two ways of doing it.
+       They stay on screen now, in place, dimmed to the point of being clearly
+       inert. The fold is still here, inverted: it hides a route you are done
+       considering, rather than hiding every route by default. */
+    const folded = ref({});
     /* the change the take is currently sitting on — the head of the live route */
     const current = computed(() => (list.value.find(c => !c.dead) || {}).id || null);
     const shown = computed(() => {
-      const openForks = new Set();
-      list.value.forEach(c => { if (forks.value[c.id] && c.replaced) c.replaced.forEach(x => openForks.add(x.id)); });
-      return list.value.filter(c => !c.dead || openForks.has(c.id));
+      const hidden = new Set();
+      list.value.forEach(c => { if (folded.value[c.id] && c.replaced) c.replaced.forEach(x => hidden.add(x.id)); });
+      return list.value.filter(c => !hidden.has(c.id));
     });
 
     /* ONE LINE'S WORTH — and it has to name the THING, not the task.
@@ -170,28 +309,139 @@ app.component('ed-history', {
       ? (e.note || objLabel(takeId, e.obj))
       : objLabel(takeId, e.obj);
 
-    const headline = (c) => {
-      const objs = [...new Set(c.entries.map(e => thingOf(e, c.takeId)).filter(Boolean))];
-      const steps = [...new Set(c.entries.map(e => stepLabel(c.takeId, e.step)).filter(Boolean))];
-      const cap = (list, n) => list.slice(0, n).join(', ') + (list.length > n ? ' +' + (list.length - n) : '');
-      const what = objs.length ? cap(objs, 2) : '';
-      const did = steps.length ? cap(steps, 2) : '';
+    /* ---- THE ROW AS A SENTENCE ------------------------------------------
+       `PROJ 1 · create projector → EPSON` is a database row read aloud. It is
+       precise and it is not how anybody describes what they did — and this line
+       is read by producers, not by the people who wrote the field names. So the
+       verb comes first and the row finishes the sentence the avatar starts:
+       NINA moved PROJ 1 to 9.4 · 6.1 · −8.7. Same facts, same fields, nothing
+       invented — only the grammar changes.
 
-      /* one edit: say the value as well — it is the answer to "what did they do" */
-      if (c.entries.length === 1) {
-        const e = c.entries[0], l = line(e);
-        const head = [what, did || (l.verb || '').toLowerCase()].filter(Boolean).join(' · ');
-        return l.to ? head + ' → ' + l.to : head;
+       The detail underneath keeps its column form, because that is a table and
+       a table is the right shape for comparing values. */
+    /* THE VERB IS THE FACT. A row that says "tile on LED 2" names a field and
+       leaves the reader to guess whether it was set, swapped or removed — and
+       the guess is the only part that matters. So the verb is supplied here
+       rather than borrowed from the step label, which carries one only by
+       accident: `projectors.lens` is labelled "set lens", while `led.tile` has
+       no checklist step behind it at all and falls back to the bare noun.
+
+       SET or CHANGED is read off the edit itself: an entry with no `from` is the
+       first answer anybody gave, and one with a `from` is somebody overruling an
+       answer that was already there. Those are different acts and the log should
+       not call them both the same thing. */
+    const nounOf = (st) => (st || '').replace(/^(set|create|choose|pick|assign|make|define)\s+/i, '').trim();
+    const didSet = (e) => (e.from == null || e.from === '') ? 'set ' : 'changed ';
+    const phrase = (e) => {
+      const l = line(e);
+      const o = objLabel(e.takeId, e.obj), st = stepLabel(e.takeId, e.step);
+      const val = l.to != null && l.to !== '' ? String(l.to) : null;
+      const noun = nounOf(st);
+      switch (e.kind) {
+        /* a CREATE step is not a property of the thing, it IS the thing */
+        case 'value':    return /\.create$/.test(e.step || '')
+          ? didSet(e) + (o || 'something') + ' to ' + (val || '—')
+          : didSet(e) + (noun || 'a value') + (o ? ' on ' + o : '') + (val ? ' to ' + val : '');
+        case 'move':     return 'moved ' + (o || 'something') + (val ? ' to ' + val : '');
+        case 'add':      return 'added “' + (e.note || o || 'something') + '”' + (e.to ? ' — a ' + e.to : '');
+        case 'remove':   return 'deleted “' + (e.note || o || 'something') + '”';
+        case 'media':    return 'loaded ' + (val || 'media') + (o ? ' onto ' + o : '');
+        case 'cue':      return 'cued ' + (noun || 'the sequence') + (val ? ' to ' + val : '');
+        case 'status':   return (e.to === 'done' ? 'closed ' : e.to === 'fail' ? 'flagged ' : 'reopened ')
+                                + (noun || 'a task') + (o ? ' on ' + o : '');
+        case 'assign':   return 'assigned ' + (noun || 'a task') + ' to ' + nameOfWho(e.to);
+        case 'deadline': return 'set the deadline on ' + (noun || 'a task') + ' to ' + (e.to || '—');
+        /* AN OP DESCRIBES ITSELF IN `note`, in four shapes the room produces:
+           "<THING> MOVED" / "<THING> RESIZED" from dragging in 3D, "REMOVED" and
+           "CLEARED" from taking things out, and a bare noun — SHAPE, VENUE,
+           PERSON — from making one. Each gets its own verb, because "shape led"
+           told the reader nothing about what happened to it. */
+        case 'op': {
+          const n = (e.note || '').trim();
+          const mv = n.match(/^(.*\S)\s+(MOVED|RESIZED)$/i);
+          if (mv) return mv[2].toLowerCase() + ' ' + mv[1].toLowerCase() + (val ? ' to ' + val : '');
+          if (/^REMOVED$/i.test(n)) return 'deleted ' + (l.from || l.what || 'a shape');
+          if (/^CLEARED$/i.test(n)) return 'cleared the scene' + (l.from ? ' — ' + l.from : '');
+          /* `e.to` is the thing's own name — LED 1. `l.what` falls back to the
+             step id's last segment, which for `led.shape` is the word "shape":
+             the category, not the wall. Name first. */
+          if (/^SHAPE$/i.test(n)) return 'built ' + (e.to || l.what || 'a shape');
+          if (n) return 'added a ' + n.toLowerCase() + (e.to && e.to.toUpperCase() !== n ? ' · ' + e.to : '');
+          return 'changed ' + (l.what || 'something');
+        }
+        default:         return (l.verb || e.kind).toLowerCase() + (l.what ? ' ' + l.what : '');
       }
-      if (what && did) return what + ' · ' + did;
-      if (what) return what + ' · ' + c.entries.length + ' edits';
-      if (did) return did;
-      return c.entries.length + ' edit' + (c.entries.length === 1 ? '' : 's');
+    };
+
+    const headline = (c) => {
+      const cap = (list, n) => list.slice(0, n).join(', ') + (list.length > n ? ' +' + (list.length - n) : '');
+      /* one edit is one sentence */
+      if (c.entries.length === 1) return phrase(c.entries[0]);
+      /* several: one clause per distinct thing said, so two people reading the
+         same row agree on what happened without opening it */
+      const rows = foldRows(c);
+      const parts = rows.map(r => phrase(r.first) + (r.n > 1 ? ' ×' + r.n : ''));
+      if (parts.length === 1) return parts[0];
+      if (parts.length === 2) return parts[0] + ' and ' + parts[1];
+      return cap(parts, 2) + ' more';
     };
     /* the single figure worth putting on the closed line */
     const topFigure = (c) => {
       const f = (c.impact || []).find(x => x.material);
       return f ? fmtDelta(f) : '';
+    };
+    /* ---- WHEN A FIGURE IS A PEAK ---------------------------------------
+       The money on a row used to be drawn in the alert accent whatever it said,
+       so a £200 move and a £40,000 one shouted equally and the reader learned to
+       read past both. It is quiet grey now, and only a genuine spike is flagged.
+
+       SIGNIFICANT MEANS SIGNIFICANT TO THIS PRODUCTION, not larger than some
+       number typed in here. A £5,000 swing is the whole budget of a small job
+       and a rounding error on an arena, so the test is the share of the figure's
+       OWN total that one change moved. Measured against the larger of the before
+       and after, so stripping a production back flags as loudly as building it
+       up. One constant, and it is the only thing to argue with. */
+    const PEAK_SHARE = 0.1;                 // a tenth of the production's own figure
+    const PEAK_OVER = 2;                    // and twice the typical move in this log
+
+    /* THE SHARE TEST ALONE IS NOT ENOUGH, and it fails in the one place the flag
+       has to behave: a production being built from nothing. The first item is
+       100% of the cost, the second 50%, the third 33% — ten identical projectors
+       in a row would every one of them flag, which is the "everything shouts"
+       problem this is supposed to end.
+
+       So a peak also has to be a peak IN THIS LOG: at least twice the typical
+       material move. Identical items are never outliers, so building a rig
+       quietly stays quiet, and the bulk re-spec that actually costs something
+       still lands in red. Two tests, each covering the other's blind spot. */
+    const typicalMove = computed(() => {
+      const moves = list.value
+        .map(c => (c.impact || []).find(x => x.material))
+        .filter(Boolean).map(f => Math.abs(f.delta)).sort((a, b) => a - b);
+      if (!moves.length) return 0;
+      const m = Math.floor(moves.length / 2);
+      return moves.length % 2 ? moves[m] : (moves[m - 1] + moves[m]) / 2;
+    });
+    const peakOf = (c) => {
+      const f = (c.impact || []).find(x => x.material);
+      if (!f) return null;
+      const base = Math.max(Math.abs(f.to), Math.abs(f.from));
+      const move = Math.abs(f.delta);
+      if (!base || move / base < PEAK_SHARE) return null;
+      const typ = typicalMove.value;
+      return (typ > 0 && move >= typ * PEAK_OVER) ? f : null;
+    };
+    const isPeak = (c) => !!peakOf(c);
+    /* the reason, on hover — a flag that cannot say why it fired is a flag
+       people turn off */
+    const markTitle = (c) => {
+      const all = (c.impact || []).filter(f => f.material)
+        .map(f => f.label + ' ' + fmtDelta(f) + ' (now ' + fmtFig(f, f.to) + ')').join(' · ');
+      const p = peakOf(c);
+      if (!p) return all;
+      const base = Math.max(Math.abs(p.to), Math.abs(p.from));
+      return all + ' — ' + Math.round(Math.abs(p.delta) / base * 100) + '% of the production’s '
+             + p.label.toLowerCase() + ', and well over the usual move here, which is why it is flagged';
     };
     const goBack = (c) => {
       const label = nameOfWho(c.who) + '’s change at ' + hhmm(c.at);
@@ -243,11 +493,13 @@ app.component('ed-history', {
     };
     const DEPTS = computed(() => Object.keys(REQS));
 
-    return { ...ctx, scope, open, toggle, list, line, touched, total,
+    return { ...ctx, scope, open, toggle, list, line, foldRows, valSummary, touched, total,
              nameOfTake, nameOfWho, taskLabel, hhmm, dayOf, fmtFig, fmtDelta,
              saveCSV, saveMD, prodName, teamOpen, explain, draft, addPerson, toggleDept, DEPTS,
              landsOn, onMe, isNew, unseen, inbox, catchUp, dealWith, sel, goBack, revertOf,
-             forks, shown, headline, topFigure, current,
+             folded, shown, headline, topFigure, current, myHue,
+             divergedCount, agreed, settle, isPeak, markTitle,
+             takeDepth, rowDepth, onRoute, offRoute, forkOf, proposeOf, rejectOf, liveOf,
              raised, toggleRaise, isRaised, isAcked,
              memberOf, MEMBERS, who, FIGURES };
   },
@@ -277,6 +529,20 @@ app.component('ed-history', {
     <button class="hist-tab" :class="{ on: scope === 'prod' }" @click="scope = 'prod'">WHOLE PRODUCTION</button>
     <button class="hist-tab" :class="{ on: scope === 'take' }" @click="scope = 'take'">THIS TAKE</button>
     <button class="hist-tab" :class="{ on: scope === 'mine' }" @click="scope = 'mine'">MINE</button>
+    <!-- THE KEY. The dots were carrying a real distinction — did this change
+         move something the production commits to — and saying it only on hover,
+         which is no use to anybody who has not already guessed there is a rule.
+         Three states, named where they are used, in the same ink as the dots
+         themselves so the key IS the thing it explains. It wraps below the tabs
+         on a narrow panel rather than squeezing them. -->
+    <span class="hist-key">
+      <span class="hist-key-i" title="This change moved none of the figures the production commits to — a cue, a fork, a proposal, an assignment, or an edit whose net effect on them is nothing">
+        <i class="tl-dot"></i>No Impact</span>
+      <span class="hist-key-i" title="This change moved at least one of the six figures the production commits to — cost, weight, power, stage area, LED area or trucks">
+        <i class="tl-dot alert"></i>Change has Impact</span>
+      <span class="hist-key-i" title="Where the take stands now, and the most recent change on the line you are on">
+        <i class="tl-dot now"></i>Now</span>
+    </span>
     <button class="hist-tab-n" :class="{ on: explain }" @click="explain = !explain"
             :title="explain ? 'Hide what a change is' : 'What counts as a change?'">
       <b>{{ list.length }}</b> change<template v-if="list.length !== 1">s</template>
@@ -349,15 +615,70 @@ app.component('ed-history', {
        detail you went looking for rather than detail you were handed. -->
   <div class="tl">
     <div class="tl-row now">
+      <!-- one dashed line per take this one is nested inside. A row two forks
+           deep leaves TWO lines running behind it, and a single pseudo-element
+           can only ever draw one of them — which is why the nested case came out
+           with the outer line missing entirely. -->
+      <span v-for="d in (take ? takeDepth(take.id) : 0)" :key="'nb' + d" class="tl-bypass"
+            :style="{ '--d': d - 1 }" aria-hidden="true"></span>
       <span class="tl-time">now</span>
-      <span class="tl-dot now"></span>
+      <span class="tl-dot now" title="NOW — the take as it currently stands"></span>
       <span class="tl-nowt">{{ nameOfTake(take ? take.id : '') }} as it currently stands</span>
+    </div>
+    <!-- and the turn back. NOW is drawn on the trunk whatever take you are in,
+         so when that take is a fork the line has to be seen leaving the trunk to
+         reach it — the same curve as the one at the fork point, mirrored. -->
+    <div v-if="take && takeDepth(take.id) > 0" class="tl-joinrow" :style="{ '--br': takeDepth(take.id) }">
+      <span v-for="d in takeDepth(take.id)" :key="'jb' + d" class="tl-bypass"
+            :style="{ '--d': d - 1 }" aria-hidden="true"></span>
+      <span class="tl-join top" aria-hidden="true">
+        <svg viewBox="0 0 23 34" preserveAspectRatio="none">
+          <path d="M 0.5 0 C 0.5 17, 22.5 17, 22.5 34" />
+        </svg>
+      </span>
     </div>
 
     <template v-for="c in shown" :key="c.id">
-      <div class="tl-row" :class="{ sel: sel === c.id, dead: c.dead, back: !!revertOf(c) }">
+      <!-- WHERE THE COURSE CHANGED. Everything above this line was made after
+           somebody went back, so it is the part of the take that is following a
+           different line from the one it was on. It carries the only question
+           that is still open about it — has the team agreed to this — and the
+           answer is the take's baseline, so the band offers that and nothing of
+           its own. -->
+      <div v-if="c.divergePoint" class="tl-diverge" :class="{ agreed }" :style="{ '--br': rowDepth(c) }">
+        <span v-for="d in rowDepth(c)" :key="'db' + d" class="tl-bypass band"
+              :style="{ '--d': d - 1 }" aria-hidden="true"></span>
+        <span class="tl-diverge-l"></span>
+        <span class="tl-diverge-t">
+          <b>DIVERGED HERE</b>
+          · {{ divergedCount }} change<template v-if="divergedCount !== 1">s</template> since
+          · <template v-if="agreed">this is the agreed line</template><template v-else>not yet agreed</template>
+        </span>
+        <button v-if="!agreed" class="tl-diverge-b" @click="settle"
+                title="Make this take the baseline — the agreed version everybody works to">MAKE IT THE BASELINE →</button>
+        <span class="tl-diverge-l"></span>
+      </div>
+      <!-- WHERE A TAKE LEFT ITS PARENT. The same band as a divergence, because it
+           is the same fact one size up: from here the line you are reading is a
+           different proposal, and the production has not agreed to it. -->
+      <div class="tl-row" :class="{ sel: sel === c.id, dead: c.dead, back: !!revertOf(c),
+                                    mine: c.who === who.me, branched: rowDepth(c) > 0,
+                                    diverged: c.diverged, off: offRoute(c), junction: c.divergePoint,
+                                    forkrow: !!forkOf(c) }"
+           :style="{ '--br': rowDepth(c), '--mine-hue': myHue }">
+        <span v-for="d in rowDepth(c)" :key="'rb' + d" class="tl-bypass"
+              :style="{ '--d': d - 1 }" aria-hidden="true"></span>
         <span class="tl-time">{{ hhmm(c.at) }}<i>{{ dayOf(c.at) }}</i></span>
-        <span class="tl-dot" :class="{ alert: c.alert && !c.dead, back: !!revertOf(c), live: c.id === current }"></span>
+        <!-- WHAT THE DOT IS. Filled means this change moved something the
+             production commits to — money, mass, power, area. Hollow means it
+             did not: a cue, a proposal, a fork, a note. It was doing that job
+             silently, so it says so on hover. -->
+        <span class="tl-dot" :class="{ alert: c.alert && !c.dead, back: !!revertOf(c), live: c.id === current }"
+              :title="c.dead ? 'Replaced — no longer part of the take'
+                     : revertOf(c) ? 'A restore — the take was put back to an earlier point'
+                     : c.id === current ? 'Where the take stands now'
+                     : c.alert ? 'Moved a figure the production commits to — ' + c.impact.filter(f => f.material).map(f => f.label.toLowerCase()).join(', ')
+                     : 'Changed nothing the production commits to — no cost, weight, power or area moved'"></span>
 
         <div class="tl-card">
           <!-- ONE LINE. Who, what, and a mark if it moved something material. -->
@@ -365,17 +686,21 @@ app.component('ed-history', {
             <av :who="c.who" :me="c.who === who.me" size="s"></av>
             <span class="tl-hd-t">
               <template v-if="revertOf(c)"><b>{{ nameOfWho(c.who) }}</b> went back to {{ revertOf(c).to }}</template>
-              <template v-else><b>{{ nameOfWho(c.who) }}</b> · {{ headline(c) }}</template>
+              <template v-else-if="proposeOf(c)"><b>{{ nameOfWho(c.who) }}</b> proposed {{ proposeOf(c).to }} as the baseline</template>
+              <template v-else-if="rejectOf(c)"><b>{{ nameOfWho(c.who) }}</b> did not approve {{ rejectOf(c).from }}<template v-if="rejectOf(c).note"> — {{ rejectOf(c).note }}</template></template>
+              <template v-else-if="liveOf(c)"><b>{{ nameOfWho(c.who) }}</b> {{ line(liveOf(c)).verb.toLowerCase() }} {{ line(liveOf(c)).what }}</template>
+              <template v-else><b>{{ nameOfWho(c.who) }}</b> {{ headline(c) }}</template>
               <span v-if="c.hits > c.entries.length" class="tl-hits" :title="c.hits + ' interactions folded into ' + c.entries.length + ' recorded change' + (c.entries.length === 1 ? '' : 's') + ' — only where things were left is kept'">{{ c.hits }}×</span>
             </span>
-            <span v-if="c.alert && !c.dead" class="tl-mark" :title="c.impact.filter(f => f.material).map(f => f.label + ' ' + fmtDelta(f)).join(' · ')">{{ topFigure(c) }}</span>
+            <span v-if="c.alert && !c.dead" class="tl-mark" :class="{ peak: isPeak(c) }"
+                  :title="markTitle(c)">{{ topFigure(c) }}</span>
             <span v-if="isNew(c) && !c.dead" class="hist-new">NEW</span>
             <ic :n="open[c.id] ? 'keyboard_arrow_down' : 'chevron_right'" s="tl-chev"></ic>
           </button>
 
           <!-- everything else is behind the disclosure -->
           <div v-if="open[c.id]" class="tl-body">
-            <p class="tl-sub">{{ nameOfTake(c.takeId) }}<template v-if="taskLabel(c)"> · while doing <b>{{ taskLabel(c) }}</b></template><template v-else> · no task open</template></p>
+            <p class="tl-sub">{{ nameOfTake(c.takeId) }}<template v-if="taskLabel(c)"> · while doing <b>{{ taskLabel(c) }}</b></template><template v-else> · no task behind it</template></p>
 
             <div v-if="c.impact && c.impact.length" class="hist-imp" :class="{ alert: c.alert }">
               <span class="hist-imp-tag"><ic :n="c.alert ? 'priority' : 'monitoring'"></ic>{{ c.alert ? 'AFFECTS THE PRODUCTION' : 'KNOCK-ON' }}</span>
@@ -387,26 +712,43 @@ app.component('ed-history', {
               </span>
             </div>
 
-            <div v-for="e in c.entries" :key="e.n" class="prop">
-              <span class="hist-k">{{ line(e).verb }}</span>
-              <span class="pk" style="flex: 1 1 120px; min-width: 0;">{{ line(e).what }}</span>
-              <span v-if="e.hits > 1" class="tl-hits" :title="e.hits + ' interactions — only where it was left is kept'">{{ e.hits }}×</span>
+            <div v-for="r in foldRows(c)" :key="r.key" class="prop">
+              <span class="hist-k">{{ r.verb }}</span>
+              <span class="pk" style="flex: 1 1 120px; min-width: 0;">{{ r.what }}</span>
+              <span v-if="r.n > 1" class="tl-hits" :title="r.n + ' edits that said the same thing, folded into one row'">{{ r.n }}×</span>
+              <span v-else-if="r.hits > 1" class="tl-hits" :title="r.hits + ' interactions — only where it was left is kept'">{{ r.hits }}×</span>
               <span class="pv" style="flex: 0 0 auto;">
-                <template v-if="line(e).from"><span style="color: var(--text-meta); text-decoration: line-through;">{{ line(e).from }}</span> → </template>
-                <template v-if="line(e).to">{{ line(e).to }}</template>
+                <!-- a list is a tally; a single thing in successive states is a journey -->
+                <template v-if="r.listy && r.n > 1">{{ valSummary(r) }}</template>
+                <template v-else>
+                  <template v-if="r.from"><span style="color: var(--text-meta); text-decoration: line-through;">{{ r.from }}</span><template v-if="r.to"> → </template></template>
+                  <template v-if="r.to">{{ r.to }}</template>
+                </template>
               </span>
             </div>
 
+            <!-- NOTHING TO DO TO WORK THAT IS NO LONGER DOING ANYTHING. A replaced
+                 change can still be READ — that is the whole reason it stays on
+                 screen — but it cannot be acted on: raising it would push a
+                 decision the take has already stepped around, and going back to
+                 it would fork off a route that was itself abandoned. The row says
+                 so rather than leaving two live-looking buttons that quietly do
+                 the wrong thing. -->
             <div class="tl-acts">
-              <template v-if="landsOn(c).length">
+              <template v-if="landsOn(c).length && !c.dead">
                 <span class="hist-lands-t">LANDS ON</span>
                 <av v-for="m in landsOn(c)" :key="m.id" :who="m.id" size="s" :me="m.id === who.me"></av>
                 <span v-if="onMe(c)" class="hist-lands-you">— including you</span>
               </template>
+              <span v-if="c.dead" class="tl-cold">No longer part of {{ nameOfTake(c.takeId) }} — kept as a record</span>
               <span style="flex: 1;"></span>
-              <button class="vopt" :class="{ on: isRaised(c.id) }" @click.stop="toggleRaise(c)">{{ isRaised(c.id) ? 'RAISED' : 'RAISE' }}</button>
-              <button v-if="c.state" class="vopt" @click.stop="sel = (sel === c.id ? null : c.id)">GO BACK TO HERE</button>
-              <span v-else class="tl-cold" title="Only the most recent stretch of the log keeps a restorable state">READ-ONLY</span>
+              <button class="vopt" :class="{ on: isRaised(c.id) }" :disabled="c.dead"
+                      :title="c.dead ? 'This change was replaced — there is nothing left to raise' : ''"
+                      @click.stop="toggleRaise(c)">{{ isRaised(c.id) ? 'RAISED' : 'RAISE' }}</button>
+              <button v-if="c.state" class="vopt" :disabled="c.dead"
+                      :title="c.dead ? 'This change is not part of the take any more' : ''"
+                      @click.stop="sel = (sel === c.id ? null : c.id)">GO BACK TO HERE</button>
+              <span v-else-if="!c.dead" class="tl-cold" title="Only the most recent stretch of the log keeps a restorable state">READ-ONLY</span>
             </div>
 
             <div v-if="sel === c.id" class="tl-confirm">
@@ -419,15 +761,42 @@ app.component('ed-history', {
         </div>
       </div>
 
-      <!-- THE FORK. The route that was abandoned, folded away where it
-           happened — one line, not a pile of dimmed cards. -->
-      <div v-if="c.replaced && c.replaced.length" class="tl-row fork">
+      <div v-if="forkOf(c)" class="tl-diverge fork" :class="{ off: offRoute(c) }" :style="{ '--br': rowDepth(c) }">
+        <span v-for="d in rowDepth(c)" :key="'fb' + d" class="tl-bypass band"
+              :style="{ '--d': d - 1 }" aria-hidden="true"></span>
+        <!-- THE TURN, DRAWN AS A TURN. A branch that begins with a straight
+             segment one column over reads as a second list; a curve leaving the
+             line reads as the same line going somewhere else, which is what a
+             fork is. Below this point the rail is the parent take, above it the
+             fork — so the curve runs from the child rail at the top to the
+             parent rail at the bottom. -->
+        <span class="tl-join" aria-hidden="true">
+          <svg viewBox="0 0 23 34" preserveAspectRatio="none">
+            <path d="M 22.5 0 C 22.5 17, 0.5 17, 0.5 34" />
+          </svg>
+        </span>
+        <span class="tl-diverge-t">
+          <b>{{ nameOfTake(c.takeId) }}</b> forks from <b>{{ forkOf(c).from }}</b>
+          · <template v-if="onRoute(c)">the line you are on</template><template v-else>a separate proposal</template>
+        </span>
+        <span class="tl-diverge-l"></span>
+      </div>
+      <!-- THE FORK, LABELLED WHERE IT HAPPENS. The route below this line is the
+           one that was left behind; the route above it is the one taken. The
+           button hides a route you have finished comparing — it is not the only
+           way to see one any more. -->
+      <!-- the label belongs to the stub it heads, so it sits at the stub's own
+           indent rather than out on the spine the stub was skipped by -->
+      <div v-if="c.replaced && c.replaced.length" class="tl-row fork" :style="{ '--br': rowDepth(c) + 1 }">
         <span class="tl-dot fork"></span>
-        <button class="tl-fork" @click="forks[c.id] = !forks[c.id]">
+        <button class="tl-fork" @click="folded[c.id] = !folded[c.id]">
           <ic n="fork_right"></ic>
-          <span>{{ c.replaced.length }} change<template v-if="c.replaced.length !== 1">s</template> replaced —
-            this route was left behind</span>
-          <i>{{ forks[c.id] ? 'HIDE' : 'SHOW' }}</i>
+          <span><template v-if="c.replaced.length === 1">1 change below this point
+              <template v-if="folded[c.id]">is hidden</template><template v-else>no longer applies</template></template>
+            <template v-else>{{ c.replaced.length }} changes below this point
+              <template v-if="folded[c.id]">are hidden</template><template v-else>no longer apply</template></template>
+            <template v-if="!folded[c.id]"> — the route left behind</template></span>
+          <i>{{ folded[c.id] ? 'SHOW' : 'HIDE' }}</i>
         </button>
       </div>
     </template>

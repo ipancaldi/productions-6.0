@@ -1,4 +1,4 @@
-import { record, who as HIST_WHO, useFigures, useSnapshot, seedFigures, raise } from './history.js';
+import { record, who as HIST_WHO, useFigures, useSnapshot, useTaskOwns, seedFigures, raise } from './history.js';
 const { createApp, reactive, computed, ref, watch, watchEffect, toRefs, provide, inject, nextTick, onMounted, onBeforeUnmount } = Vue;
 
 /* Read a token off :root once, instead of transcribing its value into JS.
@@ -1110,6 +1110,34 @@ function restoreToChange(takeId, snap, label, byId) {
 
 useSnapshot((takeId) => snapshotTake(s.takes.find(x => x.id === takeId)));
 
+/* DOES THE OPEN TASK EXPLAIN THIS EDIT? A step id names its requirement in its
+   first segment, and a task is a step, so the two can simply be compared — no
+   list to maintain and nothing new to keep in sync. `led.tile` under an open
+   `projectors.create` is somebody doing a different job with a task still on
+   screen, and the log must not claim that task as the reason.
+
+   Unknown means KEEP: an edit that names neither a step nor an object cannot be
+   shown to be unrelated, so it inherits the task exactly as it always did. This
+   only ever removes a claim the workspace could not stand behind. */
+const reqOfEdit = (stepId, objId) =>
+  (stepId && stepId.includes('.')) ? stepId.split('.')[0]
+  : (objId && objId.includes('-')) ? objId.split('-')[0]
+  : null;
+useTaskOwns((takeId, taskId, kind, stepId, objId) => {
+  const t = s.takes.find(x => x.id === takeId);
+  const st = t && t.steps.find(x => x.id === taskId);
+  if (!st) return false;                       // the task is not in this take at all
+  const req = reqOfEdit(stepId, objId);
+  /* AN OP IS NOT A CHECKLIST TASK. Drawing a wall, dropping a venue, placing a
+     crowd — none of these are steps, so when one names no requirement there is
+     nothing to match and "unknown means keep" becomes "keep whatever happened to
+     be on screen". That is how drawing an LED wall came to be recorded as done
+     "while doing create projector". For ops the benefit of the doubt runs the
+     other way: no demonstrable link, no claimed reason. */
+  if (!req) return kind !== 'op';
+  return req === st.reqKey;
+});
+
 useFigures((takeId) => {
   const t = s.takes.find(x => x.id === takeId);
   try { return takeFigures(t); } catch (_) { return null; }
@@ -1375,14 +1403,41 @@ function thumbOf(kind, model) {
    ================================================================== */
 const sketching = computed(() => !!(take.value && take.value.sketch));
 
-/* One arrangement, and it is the landing: the two ways IN on the left — draw it,
-   or drop a reference — and on the right the scene they produce, empty until they
-   produce it. Input then result, in reading order. The plan panel joins the input
-   column the first time the agent answers — see `ensureAgentPanel`. */
-const sketchRoot = () => mkSplit('row', [
-  mkSplit('col', [mkArea('sketch'), mkArea('refs')], [0.52, 0.48]),
-  mkArea('stage'),
-], [0.4, 0.6]);
+/* v6.0 · THE LANDING IS EMPTY, AND THAT IS THE LESSON.
+   It used to be three panels — draw here, drop references there, the scene on
+   the right — a good arrangement, chosen for you before you had said anything.
+   Which is the wrong first sentence for a workspace whose entire claim is that
+   nothing is fixed: you learn to accept what you are handed, and the two
+   gestures that actually run the thing stay undiscovered.
+
+   So the first screen is an empty canvas and the two ways out of it, both real:
+   DRAW one panel on the dots and split it until the screen is yours, or press a
+   task in the rail and get the cluster somebody already worked out for that job.
+   One is the model; the other is the shortcut. Doing them in that order is how
+   the model gets learned.
+
+   `null` IS the tree. Every walker over it — `rects`, `allAreas`, `liveAreas`,
+   `gutterList`, `findNode`, `normalize` — answers "no panels" rather than
+   assuming at least one, and `closeArea` can now close the last one and land
+   you back here. See `emptyWorkspace` and `startDraw`. */
+const landingRoot = () => null;
+
+/* v6.0.1 · THE WELCOME IS A DOOR, NOT A TOLL BOOTH.
+   An empty first screen teaches the two gestures exactly once. Shown again on
+   every boot it stops being a lesson and becomes a step between somebody and
+   the work — and the person it is teaching is, by the second time, somebody
+   who already knows. So it is shown until it has done its job, and after that
+   a sketch take opens in the SKETCH workspace: the pad and the scene, which is
+   what a sketch take was always for.
+
+   DONE ITS JOB MEANS THEY ACTED, not that they saw it. The flag is set when
+   the workspace stops being empty for the first time — drew a panel, pressed
+   a task, or used the button — rather than on render, so closing the tab
+   without touching anything leaves the introduction still owed. It is watched
+   in one place for the same reason `s.task` is: a flag three callers have to
+   remember to set is a flag that goes stale at the fourth. */
+const WELCOMED = 'pctf5.welcomed';
+const welcomed = () => { try { return !!localStorage.getItem(WELCOMED); } catch (e) { return false; } };
 
 /* NAMED, because the one you land in is the demo and calling it SKETCH put the
    word on four things at once: the production, its take, the task button in the
@@ -1503,16 +1558,30 @@ function promoteSketch() {
 }
 
 /* ---------- what is being done ---------- */
+/* WHICH NAMED WORKSPACE IS ON SCREEN, as the layout key spells it: read off the mode
+   you are in rather than re-derived from `s.task` and `s.preset`, which are what the
+   rails LIGHT and can legitimately disagree with it — saving the arrangement you are
+   in under a name lights its chip without moving you anywhere.
+   It exists because `setIntent` rebuilds the mode key, and before it that was built out
+   of `s.task` alone: declare a different task while one of your saved workspaces was up
+   and the workspace was simply gone. */
+const slotNow = () => {
+  const m = layoutMeta[s.mode];
+  /* a mode with no meta was not built by `ensureLayout` — `doFork` writes a few of
+     its own — so the pair is the fallback rather than an empty slot, which would
+     silently drop you out of whatever workspace you were in. */
+  return m ? (m.slot || '') : (s.preset ? WS + s.preset : (s.task || ''));
+};
 function setIntent(key) {
   if (s.intent === key) return;
   s.intent = key;
   const t = take.value;
   if (!t) return;
-  s.mode = layoutKey(t.id, key, s.task);
-  s.preset = '';
+  const slot = slotNow();
+  s.mode = layoutKey(t.id, key, slot);
   maximizedId.value = null;
   menuFor.value = null;
-  ensureLayout(s.mode, t.sig, key, t.sketch ? sketchRoot : null, s.task);
+  ensureLayout(s.mode, t.sig, key, t.sketch ? landingRoot : null, slot);
   keepAlive(s.mode);
   syncGuide();
   const R = INTENT_BY_KEY[key];
@@ -1520,7 +1589,7 @@ function setIntent(key) {
   toast(key ? R.label + ' — ' + countAreas(layouts[s.mode].root) + ' panels featured. ' + R.why
             : 'No task declared — every panel this checklist calls up');
 }
-const countAreas = (n) => n.type === 'area' ? 1 : n.children.reduce((a, c) => a + countAreas(c), 0);
+const countAreas = (n) => !n ? 0 : n.type === 'area' ? 1 : n.children.reduce((a, c) => a + countAreas(c), 0);
 
 /* The agent proposed a task, and somebody said yes. The override is applied as a
    one-off arrangement rather than saved as a new definition of the cluster: it is
@@ -1575,19 +1644,29 @@ function openTake(id) {
   if (been) {
     s.intent = been.intent || '';
     s.task = been.task || '';
+    /* and which of YOUR workspaces, if that is what you left this take in. Restoring
+       the task but not the saved workspace put you back on the intent's default
+       cluster and left the preset rail lit at nothing. */
+    s.preset = (been.preset && presets.some(p => p.id === been.preset)) ? been.preset : '';
   } else {
     const guess = inferIntent(t);
     s.intent = (guess && INTENT_BY_KEY[guess]) ? guess : '';
-    s.task = '';
+    /* a sketch take opens on the two panels it is FOR — the pad and the scene,
+       the same object drawn twice — unless the welcome screen is still owed,
+       in which case it gets the empty canvas it needs to be shown on. See
+       `welcomed`. Every other take is still led by its checklist. */
+    s.task = (t.sketch && welcomed()) ? 'sketch' : '';
+    s.preset = '';
   }
   // the workspace belongs to the take AND to what is being done in it
-  s.mode = layoutKey(t.id, s.intent, s.task);
-  s.preset = '';
+  const slot = s.preset ? WS + s.preset : (s.task || '');
+  s.mode = layoutKey(t.id, s.intent, slot);
   maximizedId.value = null;
   menuFor.value = null;
-  /* the sketch stage has one arrangement and it IS the landing — but a saved one
-     still wins, which is why the root is passed as a fallback rather than forced */
-  ensureLayout(s.mode, t.sig, s.intent, t.sketch ? sketchRoot : null, s.task);
+  /* the sketch stage lands on an empty canvas — but an arrangement you SAVED
+     there still wins, which is why the root is passed as a fallback rather than
+     forced. See `landingRoot`. */
+  ensureLayout(s.mode, t.sig, s.intent, t.sketch ? landingRoot : null, slot);
   keepAlive(s.mode);
   syncGuide();
   if (switchingProd) learn('interrupt');
@@ -1599,9 +1678,9 @@ function openTake(id) {
    update is a memory that goes stale at the seventh. Watching the three values instead
    cannot be bypassed, and it lands after `openTake` has already restored them, so a take
    is never stamped with the intent of the one before it. */
-watch(() => [s.takeId, s.intent, s.task], () => {
+watch(() => [s.takeId, s.intent, s.task, s.preset], () => {
   if (!s.takeId) return;
-  WS_BY_TAKE[s.takeId] = { intent: s.intent || '', task: s.task || '' };
+  WS_BY_TAKE[s.takeId] = { intent: s.intent || '', task: s.task || '', preset: s.preset || '' };
 });
 
 /* opening a production means opening its live take, or its first if none is */
@@ -1751,13 +1830,23 @@ function doFork() {
     layouts[nk] = reId(JSON.parse(JSON.stringify(layouts[k])));
     layoutMeta[nk] = { sig: copy.sig, intent };
   });
+  /* the show travels too — the files, the bin, the cues and what they are thrown at.
+     Before `openTake`, because opening the fork is what replays all of it into the
+     panels, and a replay of a take the host is holding nothing for is an empty one. */
+  forkMedia(src.id, copy.id);
   /* progress does not: status, fails, assignments and step deadlines stay behind */
   copy.forged = dayLabel(iso(today()));
-  record('fork', { who: HIST_WHO.me, prodId: copy.prodId, takeId: copy.id, task: null,
-                   from: src.name, to: copy.name });
   s.takes.push(copy);
   dialog.kind = null;
   openTake(copy.id);
+  /* RECORDED AFTER THE TAKE EXISTS. This ran first, when `copy` was still a local
+     object no lookup could find — so the entry's own figures came back null, and
+     `lastFigures` was left holding that null as though the take had been measured.
+     The fork then reported no impact, and neither did anything anybody did in it
+     afterwards: every change in a forked take came out with a hollow dot and no
+     money against it, however much it moved. */
+  record('fork', { who: HIST_WHO.me, prodId: copy.prodId, takeId: copy.id, task: null,
+                   from: src.name, to: copy.name });
   learn('take');
   learn('live');
   toast(copy.name + ' forked from ' + src.name + ' — decisions carried, progress left behind. It is an option: work it up, then go live with it if the team picks it.');
@@ -1813,13 +1902,104 @@ function askGoLive(id) { dialog.kind = 'pin'; dialog.id = id; dialog.name = ''; 
    `computePromotion` survives, repurposed: see `promotionDiff`, which now answers
    "how much of the live take's finished work would still stand under this take's
    decisions" — a question you ask BEFORE committing, not a consequence of it. */
-function doGoLive() {
+/* ==================================================================
+   THE BASELINE IS PROPOSED, AND SOMEBODY ELSE AGREES TO IT.
+
+   Until now anybody who could edit could make their own take the version
+   the whole team works to, which is not a decision one person makes on a
+   real job. The roster already carried the answer: ACCESS names an owner,
+   an admin, editors, a commenter and a viewer, and `NEEDS.baseline`
+   already gated the ACT. What was missing was the SECOND PAIR OF EYES.
+
+   Two rules, and they are the whole system:
+     · only OWNER and ADMIN can approve — an editor may propose and no more
+     · nobody approves their own proposal, whatever their rank
+
+   The second is why the owner is not a special case. CAM owns this
+   production and still cannot wave her own take through; TOM W, the
+   admin, is the one who is asked. A rank that could self-approve would
+   make the whole flow disappear for exactly the people who most need a
+   witness.
+
+   One pending proposal per production, because a production has one
+   baseline and two competing proposals is a question about which to ask
+   first, not about which to agree to. ================================= */
+const PROPOSALS = reactive({});                    // prodId -> { takeId, by, at, note }
+const proposalOf = (prodId) => PROPOSALS[prodId] || null;
+const APPROVE_RANK = 3;                            // admin and above
+/* CAN THIS PERSON SETTLE THIS PROPOSAL? Rank, and not being its author. */
+function canApprove(prodId, who) {
+  const pr = proposalOf(prodId);
+  const me = who || HIST_WHO.me;
+  return !!pr && pr.by !== me && rankOf(me) >= APPROVE_RANK;
+}
+/* WHO IT IS WAITING ON, so the proposer is told who to go and ask rather than
+   left wondering whether anything happened at all. */
+const approversFor = (prodId, exceptWho) =>
+  MEMBERS.filter(m => m.id !== exceptWho && rankOf(m.id) >= APPROVE_RANK);
+
+/* SET ASIDE, NOT DECIDED. Per session and per proposal: dismissing the modal
+   must not look like an answer, so a NEW proposal opens it again. */
+const approvalAside = ref(false);
+const rejectNote = ref('');
+/* the proposal THIS person owes a decision on, in the production they are in */
+const pendingForMe = computed(() => {
+  const p = prodOf(take.value);
+  if (!p) return null;
+  const pr = proposalOf(p.id);
+  return (pr && canApprove(p.id, HIST_WHO.me)) ? pr : null;
+});
+watch(pendingForMe, (pr, was) => {
+  if (pr && (!was || was.takeId !== pr.takeId || was.by !== pr.by)) approvalAside.value = false;
+});
+
+function proposeBaseline() {
+  const next = s.takes.find(t => t.id === dialog.id);
+  const p = prodOf(next);
+  if (!next || !p) { dialog.kind = null; return; }
+  const able = approversFor(p.id, HIST_WHO.me);
+  if (!able.length) {
+    toast('There is nobody else who can approve this — a baseline needs an owner or an admin other than you.');
+    dialog.kind = null; return;
+  }
+  PROPOSALS[p.id] = { takeId: next.id, by: HIST_WHO.me, at: Date.now(), note: '' };
+  record('propose', { who: HIST_WHO.me, prodId: p.id, takeId: next.id, task: null,
+                      from: (liveTakeOf(p) || {}).name || null, to: next.name });
+  dialog.kind = null;
+  learn('promote');
+  toast(next.name + ' proposed as the baseline — waiting on ' +
+        able.map(m => m.name).join(' or ') + ' to approve it.');
+}
+function rejectBaseline(note) {
+  const p = prodOf(take.value) || s.prods.find(x => proposalOf(x.id));
+  const pr = p && proposalOf(p.id);
+  if (!pr || !canApprove(p.id, HIST_WHO.me)) return;
+  const t = s.takes.find(x => x.id === pr.takeId);
+  record('reject', { who: HIST_WHO.me, prodId: p.id, takeId: pr.takeId, task: null,
+                     from: t ? t.name : null, to: memberOf(pr.by) ? memberOf(pr.by).name : pr.by,
+                     note: (note || '').trim() || null });
+  delete PROPOSALS[p.id];
+  /* NOTHING IS DESTROYED. The take keeps every decision and every closed task
+     and goes on being an option; only the claim on the baseline is withdrawn,
+     with a name and a reason against it so the proposer knows what to change. */
+  toast((t ? t.name : 'The take') + ' was not approved — it stays an option, and the reason is in the log.');
+}
+function approveBaseline() {
+  const p = prodOf(take.value) || s.prods.find(x => proposalOf(x.id));
+  const pr = p && proposalOf(p.id);
+  if (!pr || !canApprove(p.id, HIST_WHO.me)) return;
+  dialog.id = pr.takeId;
+  delete PROPOSALS[p.id];
+  doGoLive(pr.by);
+}
+function doGoLive(proposedBy) {
   const next = s.takes.find(t => t.id === dialog.id);
   const p = prodOf(next);
   if (!next || !p) { dialog.kind = null; return; }
   const prev = liveTakeOf(p);
   const e = record('live', { who: HIST_WHO.me, prodId: p.id, takeId: next.id, task: null,
-                             from: prev ? prev.name : null, to: next.name });
+                             from: prev ? prev.name : null, to: next.name,
+                             note: proposedBy || null });
   p.liveTakeId = next.id;
   p.baselineAt = Date.now();
   /* A NEW BASELINE IS THE ONE ANNOUNCEMENT NOBODY MAY MISS. It is raised the
@@ -2772,9 +2952,20 @@ const TASKS = [
   { key: 'proj',    label: 'Projectors',  icon: 'present_to_all',
     why: 'Getting light onto the surface, how much of it lands, and where two beams meet.',
     panels: ['stage', 'photometry', 'align', 'projlib'] },
+  /* COST BELONGS IN HERE, and of all twelve workspaces this is the one where that is
+     not a nicety. Every other task spends money an object at a time — a projector, a
+     camera, a base station — and the figure moves by thousands. A wall is priced PER
+     TILE, so choosing a tile in the list beside it re-prices, re-weighs and re-draws
+     the power of the largest thing in the room in one click, routinely by more than
+     every projector, camera and server on the job put together (see the note in
+     `costOf` about the screens line). Making somebody leave the workspace to find out
+     what they just did is how a tile gets chosen for the wrong reason.
+     `column` because there are four of them now: one stack down the left, room on the
+     right, in the order the job is done — the tile, how many, where the pixels go,
+     what it costs. `withRoom`'s two-column rule is for workspaces that did not ask. */
   { key: 'led',     label: 'LED & Canvas', icon: 'grid_on',
-    why: 'The tile, how many of it the shape needs, and the pixels that makes.',
-    panels: ['stage', 'ledtile', 'ledlib', 'canvas'] },
+    why: 'The tile, how many of it the shape needs, the pixels that makes, and what it costs.',
+    panels: ['stage', 'ledtile', 'ledlib', 'canvas', 'cost'], shape: 'column' },
   { key: 'content', label: 'Sequence Content', icon: 'timeline',
     why: 'The cues: what plays, when, and what it looks like, plus content made here when there is none to load.',
     /* ALL FOUR, and the ORDER is the gesture: what Aiden draws is dragged onto the
@@ -2898,7 +3089,8 @@ const presetHash = (sig, intent) => djb2(JSON.stringify(stripIds(presetForIntent
    ever redefined, an arrangement saved against the old one is retired rather than
    silently reused. Same bargain `presetForIntent`/`presetHash` already strike. */
 const taskRoot = (key) => { const t = TASK_BY_KEY[key];
-  return t ? (t.shape === 'stack' ? layoutStacked(t.panels) : layoutFromPanels(t.panels, t.roomShare)) : null; };
+  return t ? (t.shape === 'stack' ? layoutStacked(t.panels)
+            : layoutFromPanels(t.panels, t.roomShare, t.shape === 'column')) : null; };
 const taskHash = (key) => { const t = TASK_BY_KEY[key];
   return t ? djb2(JSON.stringify([t.shape || '', t.roomShare || 0, t.panels])) : 0; };
 
@@ -2919,14 +3111,42 @@ const LSK = 'pctf5.layout.';
    rebuilt from the default, your panel gone, and every iframe with it.
    With the task in the key each one keeps its own arrangement, remembered in memory for
    the session and in localStorage beyond it, exactly as intents already did. */
-const layoutKey = (takeId, intent, task) => takeId + '|' + (intent || '') + '|' + (task || '');
+const layoutKey = (takeId, intent, slot) => takeId + '|' + (intent || '') + '|' + (slot || '');
+/* v6.0.1 · AND A SAVED WORKSPACE IS A SLOT TOO, for the same reason and after the same
+   bug. The third field used to mean "which TASK", and a saved workspace had no value to
+   put in it — so applying one wrote itself into whichever task you happened to be
+   standing in, stamped with THAT task's `defaultHash`, and the hash matched for ever
+   after. Apply a workspace while LED & CANVAS is up and LED & CANVAS is now that
+   workspace: in this session, in localStorage, and across a reload, while the task
+   button goes on naming the four panels it did not produce.
+   So the field means "which NAMED workspace" — a task key, or `ws:<id>` for one of
+   yours — and the two can no longer land on top of each other. Tasks keep the bare key
+   they have always stored under, so nothing saved by an older build moves. */
+const WS = 'ws:';
+const savedOf = (slot) => (slot && slot.slice(0, 3) === WS)
+  ? presets.find(p => p.id === slot.slice(3)) || null : null;
+/* the same bargain `taskHash` strikes, against the thing a saved workspace is defined
+   by: save over the name with a different arrangement and the copies of it sitting in
+   takes you have not opened since are retired rather than silently kept. */
+const savedHash = (p) => p ? djb2(JSON.stringify(stripIds(p.root))) : 0;
+const freshSaved = (p) => reId(JSON.parse(JSON.stringify(p.root)));
+/* WHAT THE STORED HASH IS FOR. A saved arrangement is only worth restoring while
+   the default it was saved against still means the same thing; when the default
+   is redefined, the hash stops matching and the arrangement is retired rather
+   than silently reused. v6.0 redefined the landing — three panels, then none —
+   so it gets its own constant and every landing saved before this build retires
+   on first read. Bump the number if it is ever redefined again. */
+const LANDING_HASH = 'landing2';
+const defaultHash = (m) => m.saved ? savedHash(savedOf(WS + m.saved))
+                         : m.task ? taskHash(m.task)
+                         : m.landing ? LANDING_HASH
+                         : presetHash(m.sig, m.intent);
 function persist(key) {
   const m = layoutMeta[key];
   if (!m || !layouts[key]) return;
   try {
-    localStorage.setItem(LSK + m.sig + '|' + m.intent + '|' + (m.task || ''),
-      JSON.stringify({ hash: m.task ? taskHash(m.task) : presetHash(m.sig, m.intent),
-                       tree: layouts[key] }));
+    localStorage.setItem(LSK + m.sig + '|' + m.intent + '|' + (m.slot || ''),
+      JSON.stringify({ hash: defaultHash(m), tree: layouts[key] }));
   } catch (e) {}
 }
 /* A SAVED WORKSPACE MUST SURVIVE THE BUILD CHANGING UNDER IT.
@@ -2956,36 +3176,66 @@ function sanitiseTree(n) {
   return { ...n, children: kept, weights: wts.map(w => w / total) };
 }
 
-function ensureLayout(key, sig, intent, rootFor, task) {
+/* Returns TRUE only when it has just built the slot's own default — which is what
+   lets `applyTask` tell "here are the four panels this task ships with" apart from
+   "here is the arrangement you left", instead of guessing from an in-memory map that
+   is empty on every boot and so called every first press of the session a fresh one. */
+function ensureLayout(key, sig, intent, rootFor, slot) {
   intent = intent || '';
-  task = task || '';
-  layoutMeta[key] = { sig, intent, task };
-  if (layouts[key]) return;
+  slot = slot || '';
+  /* a slot is a task, or one of your saved workspaces, or neither */
+  const sv = savedOf(slot);
+  const task = (slot.slice(0, 3) === WS) ? '' : slot;
+  /* `landing` — this workspace's default is NO PANELS, which `presetForIntent`
+     would never produce on its own (it is written to always return something).
+     Recorded here so that RESET on the landing puts the empty canvas back
+     rather than inventing a cluster nobody asked for. */
+  layoutMeta[key] = { sig, intent, slot, task, saved: sv ? sv.id : '', landing: !slot && !!rootFor };
+  if (layouts[key]) return false;
   let t = null;
+  const meta = layoutMeta[key];
   try {
-    const raw = localStorage.getItem(LSK + sig + '|' + intent + '|' + task);
+    const raw = localStorage.getItem(LSK + sig + '|' + intent + '|' + slot);
     if (raw) {
       const p = JSON.parse(raw);
-      if (p.hash === (task ? taskHash(task) : presetHash(sig, intent))) {
+      if (p.hash === defaultHash(meta)) {
         const clean = sanitiseTree(p.tree && p.tree.root);
-        if (clean) t = { ...p.tree, root: clean };
+        /* a stored root of `null` is a workspace somebody emptied, not a workspace
+           whose panels all died — restore it as the empty canvas it was */
+        if (clean || (p.tree && p.tree.root === null)) t = { ...p.tree, root: clean };
         else toast('That saved workspace held only panels this build no longer has — rebuilt from the default.');
       }
-      /* The signature and the task are both in the storage key, so neither of
+      /* The signature and the slot are both in the storage key, so neither of
          them can be what moved: a hash mismatch means the *definition* of this
          task's default cluster changed since the arrangement was saved against
          it. Saying "checklist changed" here blamed the wrong thing. */
-      else toast('The default cluster for ' + (INTENT_BY_KEY[intent] ? INTENT_BY_KEY[intent].label : 'ANY TASK')
-                 + ' changed — the arrangement saved against the old one no longer fits it.');
+      else if (meta.saved)
+        toast('“' + sv.name + '” has been saved over since this copy of it was arranged — the older arrangement has been retired.');
+      else if (meta.landing)
+        toast('The landing is an empty canvas in this build — the three panels saved against the old one have been retired.');
+      /* naming the TASK when a task is what moved. This said "ANY TASK" for every one
+         of the twelve, because it only ever looked the intent up — so redefining LED &
+         CANVAS reported itself as a change to a workspace nobody was in. */
+      else toast('The default panels for ' + (TASK_BY_KEY[task] ? TASK_BY_KEY[task].label
+                 : INTENT_BY_KEY[intent] ? INTENT_BY_KEY[intent].label : 'ANY TASK')
+                 + ' changed in this build — the arrangement saved against the old ones has been retired.');
+      /* RETIRED MEANS GONE. A mismatched entry used to be left in localStorage, so it
+         was read, rejected and announced again on every fresh session for ever — and
+         it sat there looking like a saved arrangement that might still come back. */
+      if (!t) { try { localStorage.removeItem(LSK + sig + '|' + intent + '|' + slot); } catch (e2) {} }
     }
   } catch (e) {}
-  layouts[key] = t || { version: 1,
-    root: task ? taskRoot(task)
+  if (t) { layouts[key] = t; return false; }
+  layouts[key] = { version: 1,
+    root: sv ? freshSaved(sv)
+        : task ? taskRoot(task)
         : rootFor ? rootFor()
         : presetForIntent(sig, intent, intentOverrides[intent]) };
+  return true;
 }
 
 function normalize(mode) {
+  if (!layouts[mode] || !layouts[mode].root) return;     // an empty workspace is already normal
   const norm = (n) => {
     if (n.type === 'area') return n;
     n.children = n.children.map(norm);
@@ -3048,7 +3298,7 @@ watch(tileEl, (el) => {
 const rects = computed(() => {
   const out = {};
   const t = layouts[s.mode];
-  if (!t || !csize.w || !csize.h) return out;
+  if (!t || !t.root || !csize.w || !csize.h) return out;
   solveNode(t.root, { x: 0, y: 0, w: csize.w, h: csize.h }, out);
   return out;
 });
@@ -3203,15 +3453,26 @@ function openPick(areaId, ev) {
     pickAt.y = Math.max(12, Math.min(r.bottom + 4, window.innerHeight - b.height - 12));
   });
 }
+/* THE CORNER TIP WAITS FOR THE RIGHT MOMENT, which is not the moment the panel
+   was made: telling somebody about corners while a full-screen chooser covers
+   the panel tells nobody anything. The moment is the first time a tool is
+   picked into a workspace holding exactly ONE panel — whether it got there by
+   a drag on the landing or by the button — because that is when the only thing
+   left to learn is how to get a second one. Once per session, then never. */
+let cornerTipShown = false;
 function choosePanel(areaId, key) {
   retarget(areaId, key);
   pickFor.value = null;
+  if (!cornerTipShown && allAreas.value.length === 1) {
+    cornerTipShown = true;
+    toast('Now drag any CORNER of that panel inwards — it splits in two, and the new half can be any tool as well. That is the whole layout engine.');
+  }
 }
 
 const allAreas = computed(() => {
   const t = layouts[s.mode];
   const list = [];
-  if (!t) return list;
+  if (!t || !t.root) return list;
   const walk = (n, axis) => { if (n.type === 'area') list.push({ node: n, axis }); else n.children.forEach(c => walk(c, n.dir)); };
   walk(t.root, 'row');
   return list.map(e => ({
@@ -3278,7 +3539,7 @@ const liveAreas = computed(() => {
   const modes = modeOrder.value.includes(s.mode) ? modeOrder.value : [...modeOrder.value, s.mode];
   modes.forEach(mode => {
     const t = layouts[mode];
-    if (!t) return;
+    if (!t || !t.root) return;
     const walk = (n) => {
       if (n.type === 'area') {
         /* keyed by MODE and id, not id alone. The same id appearing in two
@@ -3307,7 +3568,7 @@ const areaShown = (a) => a.mode === s.mode && !a.node.min
 const gutterList = computed(() => {
   const list = [];
   const t = layouts[s.mode];
-  if (!t || maximizedId.value) return list;
+  if (!t || !t.root || maximizedId.value) return list;
   const walk = (n) => {
     if (n.type !== 'split') return;
     for (let i = 0; i < n.children.length - 1; i++) {
@@ -3327,7 +3588,7 @@ const gutterList = computed(() => {
 
 function findNode(id) {
   const t = layouts[s.mode];
-  if (!t) return null;
+  if (!t || !t.root) return null;
   let res = null;
   const walk = (n, parent, idx) => {
     if (res) return;
@@ -3451,9 +3712,22 @@ function swapAreas(aId, bId) {
 
 function closeArea(areaId) {
   const f = findNode(areaId);
-  if (!f || !f.parent) { toast('Last panel — nothing to close'); return; }
+  if (!f) return;
   pushUndo();
   const title = registry[f.node.editor].title;
+  /* v6.0 · THE LAST PANEL CAN GO. It used to be refused — "Last panel — nothing
+     to close" — because an empty tree was not a thing the engine could hold. It
+     is now, and it is the screen you started on, so closing everything lands you
+     back at the dotted canvas rather than at a wall. Ctrl+Z still puts it back. */
+  if (!f.parent) {
+    layouts[s.mode].root = null;
+    maximizedId.value = null;
+    persist(s.mode);
+    announce('Closed ' + title + ' — the workspace is empty');
+    menuFor.value = null;
+    toast('Closed ' + title + '. Empty workspace — drag on the dots to draw a panel, or press a task.');
+    return;
+  }
   /* v5.9.2 · CLOSING THE GUIDE PANEL NO LONGER SWITCHES GUIDANCE OFF. It used to,
      because the panel WAS the guidance; now the guidance is the inline explanations
      plus the tour, and the panel is just one more tool you may or may not want on
@@ -3461,6 +3735,114 @@ function closeArea(areaId) {
   f.parent.children.splice(f.idx, 1);
   f.parent.weights.splice(f.idx, 1);
   commit('Closed ' + title + ' — neighbouring panels resized to fill the gap');
+}
+
+/* ==================================================================
+   THE EMPTY LANDING — a workspace with nothing in it, and the two
+   gestures that get you out of it.
+   ==================================================================
+   An empty screen is only an onboarding screen if the way off it is the
+   real mechanism rather than a special case. Both of these are:
+
+     DRAW      a drag on the dots makes the first panel. The tree cannot
+               hold a floating rectangle, so what you drew snaps out to
+               fill the canvas — which is exactly what the demo animation
+               shows happening, because teaching the gesture and then
+               doing something else would be the lie. From there the
+               corners split it, which is the one gesture the whole
+               layout engine is made of.
+     TASK      a button in the rail, which is `applyTask` and nothing new:
+               twelve clusters somebody already worked out, each its own
+               remembered workspace.
+
+   Neither is a mode. The moment there is a panel this whole layer is
+   gone, and closing the last one brings it back.
+   ================================================================== */
+const emptyWorkspace = computed(() => {
+  const t = layouts[s.mode];
+  return !!take.value && !!t && !t.root;
+});
+/* THE ONE PLACE THE WELCOME IS MARKED AS DELIVERED. Not in `firstPanel`, not in
+   `applyTask`, not in the draw — all three are ways out of the empty screen and
+   a fourth will be written eventually. Watching the state itself cannot be
+   bypassed by the next one. See `welcomed`. */
+watch(emptyWorkspace, (empty) => {
+  if (empty || welcomed()) return;
+  try { localStorage.setItem(WELCOMED, '1'); } catch (e) { /* it will be offered again, which is the safe way to fail */ }
+});
+
+/* the rubber band, in canvas coordinates. `ok` is whether letting go here
+   would actually make a panel — the band says so by colour, before the drop,
+   which is the only honest place to say it. */
+const DRAW_MIN = 56;
+const drawBox = reactive({ on: false, x: 0, y: 0, w: 0, h: 0, ok: false });
+function startDraw(e) {
+  if (e.button !== 0 || !emptyWorkspace.value || !tileEl.value) return;
+  const o = tileOrigin();
+  const a = { x: e.clientX - o.x, y: e.clientY - o.y };
+  let armed = false;
+  const move = (ev) => {
+    const q = { x: ev.clientX - o.x, y: ev.clientY - o.y };
+    if (!armed && Math.hypot(q.x - a.x, q.y - a.y) < DEADZONE) return;
+    if (!armed) { armed = true; drawBox.on = true; document.body.classList.add('pc-dragging'); setCursor('crosshair'); }
+    drawBox.x = Math.min(a.x, q.x); drawBox.y = Math.min(a.y, q.y);
+    drawBox.w = Math.abs(q.x - a.x); drawBox.h = Math.abs(q.y - a.y);
+    drawBox.ok = drawBox.w >= DRAW_MIN && drawBox.h >= DRAW_MIN;
+  };
+  const up = () => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+    document.body.classList.remove('pc-dragging');
+    setCursor('');
+    const made = drawBox.on && drawBox.ok;
+    drawBox.on = false;
+    if (made) firstPanel();
+    else if (armed) toast('Too small for a panel — drag out a bigger box, or press a task in the rail');
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+}
+
+/* THE FIRST PANEL, and then the question it raises. A frame with nothing in it
+   is not a workspace, so the picker opens on top of the one you just made:
+   the gesture and the choice are one move, and the menu it opens is the same
+   menu every panel header carries. */
+function firstPanel(key) {
+  const L = layouts[s.mode];
+  if (!L || L.root) return;
+  const ed = (key && registry[key]) ? key
+           : (take.value && take.value.sketch) ? 'sketch' : 'checklist';
+  pushUndo();
+  const node = mkArea(ed);
+  L.root = node;
+  notePanelUse(ed);
+  persist(s.mode);
+  learn('layout');
+  announce('First panel — ' + registry[ed].title);
+  /* and the corner tip is deliberately NOT said here — see `choosePanel` */
+  toast('One panel, filling the canvas. Pick what goes in it — the same menu is in every panel header, so nothing you choose here is final.');
+  nextTick(() => {
+    const el = document.querySelector('.pc-area .pc-ed-btn');
+    if (el) openPick(node.id, { currentTarget: el });
+  });
+  return node;
+}
+
+/* "pick one on the left" is an instruction about somewhere else on the screen,
+   which is the weakest kind. This makes the rail answer when the card is
+   pressed — the buttons themselves flash, so the sentence points at something
+   that moves rather than at a direction. */
+const railPulse = ref(false);
+let _rp = null;
+function pulseTasks() {
+  railPulse.value = false;
+  clearTimeout(_rp);
+  nextTick(() => {
+    railPulse.value = true;
+    const el = document.querySelector('[data-tour="tasks"]');
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    _rp = setTimeout(() => { railPulse.value = false; }, 2800);
+  });
 }
 
 function retarget(areaId, key) {
@@ -3673,12 +4055,26 @@ function buildTourSteps() {
           + '<strong>A task is something you complete. A take is something you choose.</strong> '
           + 'You never compare tasks, and you never assign a take.' },
 
+    /* PRESENT ONLY WHILE IT IS TRUE. `tourEls` drops any step whose subject is not
+       on screen, so this one exists on the empty landing and disappears the moment
+       there is a panel — which is also the moment its advice stops applying. */
+    { chapter: LAND, sel: '[data-tour="landing"]', place: 'over', title: 'You landed on an empty workspace',
+      body: 'On purpose. Nothing in this tool has a fixed home, so handing you somebody '
+          + 'else’s arrangement would teach you the wrong thing first.<br><br>'
+          + '<strong>Drag on the dots</strong> and you have made your first panel; pull its '
+          + 'corners and it splits into as many as you want. Or <strong>press a task</strong> '
+          + 'in the rail and a cluster somebody already worked out for that job arrives whole.' },
+
     /* ---- the panels, and that they are not fixed ---- */
     { chapter: PANE, sel: '[data-tour="tiles"]', place: 'over', pad: -2, title: 'Every panel is the same frame',
       body: 'There is no fixed layout in this workspace. Each panel is an identical frame with a '
           + 'tool dropped into it, so <strong>anything can be anywhere, at any size, as many times '
-          + 'as you like</strong>. What is on screen now is just the landing arrangement: somewhere '
-          + 'to draw on the left, and the room it becomes on the right.' },
+          + 'as you like</strong>. '
+          + (emptyWorkspace.value
+              ? 'Right now there are none at all, which is the landing: you build this screen, '
+                + 'or a task button builds it for you.'
+              : 'Nothing you see here was decided for you — it came from a task button or from '
+                + 'your own corners.') },
 
     { chapter: PANE, sel: '.pc-area-hd', pick: 'first', place: 'bottom', title: 'The panel header',
       body: 'Every panel carries the same controls in the same order: the menu, which take it is '
@@ -4062,11 +4458,12 @@ const reId = (n) => { n.id = nid(); if (n.type === 'split') n.children.forEach(r
 
 function askSavePreset() {
   if (!layouts[s.mode]) { toast('Open a take first'); return; }
+  if (!layouts[s.mode].root) { toast('Nothing on screen to save — draw a panel or press a task first'); return; }
   dialog.kind = 'preset'; dialog.name = '';
 }
 function doSavePreset() {
   const tree = layouts[s.mode];
-  if (!tree) { dialog.kind = null; return; }
+  if (!tree || !tree.root) { dialog.kind = null; return; }
   const name = (dialog.name || '').trim().toUpperCase() || ('WORKSPACE ' + (presets.length + 1));
   const root = JSON.parse(JSON.stringify(tree.root));
   const found = presets.find(p => p.name === name);
@@ -4077,22 +4474,36 @@ function doSavePreset() {
   learn('layout');
   toast((found ? 'Updated' : 'Saved') + ' “' + name + '” — ' + countAreas(root) + ' panels, ready for any take or role');
 }
+/* SWITCHED TO, NOT PAINTED OVER — and this is the other half of the note by `WS`.
+   A saved workspace used to be written straight into `layouts[s.mode]`, whatever
+   `s.mode` happened to be. It unlit the task button, correctly, because "a saved
+   workspace is your arrangement, not one of the twelve, and leaving a task button
+   filled would have it describing a screen it did not produce" — and then left the
+   arrangement sitting in that task's slot anyway, where `persist` stamped it with the
+   task's own hash and made it that task's definition forever.
+   So it gets a slot of its own, exactly as each task got one in v5.9.8. Applying a
+   workspace now takes you TO it and leaves every task's arrangement where it was;
+   pressing LED & CANVAS afterwards brings back LED & CANVAS. And because the slot is
+   keyed by take as well, a workspace you arranged further on one take is still yours
+   on that take when you come back to it. */
 function applyPreset(id) {
+  const tk = take.value;
+  const p = id ? presets.find(x => x.id === id) : null;
+  if (!p) { s.preset = ''; return; }
+  if (!tk) { toast('Open a take first'); return; }
   s.preset = id;
-  /* and no task is lit any more: a saved workspace is your arrangement, not one of
-     the six, and leaving a task button filled would have it describing a screen it
-     did not produce */
   s.task = '';
-  if (!id || !layouts[s.mode]) return;
-  const p = presets.find(x => x.id === id);
-  if (!p) return;
-  pushUndo();
-  layouts[s.mode].root = reId(JSON.parse(JSON.stringify(p.root)));
-  normalize(s.mode);
-  persist(s.mode);
+  s.mode = layoutKey(tk.id, s.intent, WS + id);
   maximizedId.value = null;
+  menuFor.value = null;
+  const first = ensureLayout(s.mode, tk.sig, s.intent, null, WS + id);
+  keepAlive(s.mode);
   syncGuide();
-  toast('Workspace “' + p.name + '” applied to ' + (take.value ? take.value.name : 'this take'));
+  learn('layout');
+  toast('Workspace “' + p.name + '” — ' + (first
+          ? countAreas(layouts[s.mode].root) + ' panels, as you saved them'
+          : 'your arrangement, as you left it')
+        + ' on ' + tk.name + '. Nothing in the take has changed.');
 }
 /* ---------- a layout out of a list of panels ----------
    The same shape `presetForIntent` builds — lead, working column, context column —
@@ -4115,14 +4526,16 @@ function applyPreset(id) {
 
    `share` exists for exactly one caller: the Sketch workspace, which is two
    drawings of the same thing and splits them evenly. */
-function withRoom(keys, share) {
+function withRoom(keys, share, oneCol) {
   const rest = keys.filter(k => k !== ROOM);
   if (!rest.length) return mkArea(ROOM);
   const w = share || 2 / 3;
   const col = (ks) => ks.length === 1 ? mkArea(ks[0]) : mkSplit('col', ks.map(mkArea), evenW(ks.length));
   /* past three the left third stops being readable, so it becomes two columns
-     rather than four slivers */
-  const left = rest.length <= 3 ? col(rest)
+     rather than four slivers — unless the workspace has asked for one stack, which is
+     a claim that its panels are read IN ORDER and splitting them breaks the sequence.
+     LED & CANVAS is the case: tile, count, mapping, cost, top to bottom. */
+  const left = (oneCol || rest.length <= 3) ? col(rest)
     : mkSplit('row', [col(rest.slice(0, Math.ceil(rest.length / 2))),
                       col(rest.slice(Math.ceil(rest.length / 2)))], [0.5, 0.5]);
   return mkSplit('row', [left, mkArea(ROOM)], [1 - w, w]);
@@ -4138,7 +4551,7 @@ function withRoom(keys, share) {
 const TASK_PANELS = ['checklist', 'stepeditor', 'grid'];
 const isTaskPanel = (k) => TASK_PANELS.includes(k);
 
-function layoutFromPanels(list, share) {
+function layoutFromPanels(list, share, oneCol) {
   const keys = (list || []).filter(k => registry[k]);
   if (!keys.length) return mkArea('checklist');
   if (keys.length === 1) return mkArea(keys[0]);
@@ -4148,10 +4561,10 @@ function layoutFromPanels(list, share) {
      workspace does not rearrange the panels that were already in it */
   const task = keys.filter(isTaskPanel), rest = keys.filter(k => !isTaskPanel(k));
   if (task.length && rest.length) {
-    return mkSplit('row', [col(task), layoutFromPanels(rest, share)], [0.24, 0.76]);
+    return mkSplit('row', [col(task), layoutFromPanels(rest, share, oneCol)], [0.24, 0.76]);
   }
   if (task.length) return col(task);
-  if (keys.includes(ROOM)) return withRoom(keys, share);
+  if (keys.includes(ROOM)) return withRoom(keys, share, oneCol);
   const lead = keys[0], tail = keys.slice(1);
   const mid = tail.slice(0, 3), right = tail.slice(3, 7);
   if (!right.length) return mkSplit('row', [mkArea(lead), col(mid)], [0.42, 0.58]);
@@ -4184,13 +4597,17 @@ function applyTask(key, quiet) {
      the task's panel list, which is why anything you added to a task never survived the
      next press of another one. Now each task IS a workspace: its own key, restored if
      you have arranged it before, built from the cluster the first time only. */
-  const first = !layouts[layoutKey(tk.id, s.intent, key)];
   s.task = key;
   s.preset = '';                       // a task is not one of your saved workspaces
   s.mode = layoutKey(tk.id, s.intent, key);
   maximizedId.value = null;
   menuFor.value = null;
-  ensureLayout(s.mode, tk.sig, s.intent, tk.sketch ? sketchRoot : null, key);
+  /* ASKED, NOT GUESSED. `first` used to be "this take has no layout in memory for the
+     task", and memory is empty on every boot — so the first press of ANY task in a
+     session announced the cluster it ships with whether it had built it or restored
+     something else entirely. Which is how a task could show four panels and name four
+     others in the same breath. `ensureLayout` knows; it now says. */
+  const first = ensureLayout(s.mode, tk.sig, s.intent, tk.sketch ? landingRoot : null, key);
   keepAlive(s.mode);
   syncGuide();
   learn('layout');
@@ -4207,6 +4624,9 @@ function removePreset() {
   const gone = presets.splice(i, 1)[0];
   savePresets();
   s.preset = '';
+  /* the slot outlives the name it was cut from: `layouts[s.mode]` is still on screen
+     and still yours to rearrange, it simply has no default to be reset to any more.
+     `ensureLayout` reads a `ws:` slot with nothing behind it as no slot at all. */
   toast('“' + gone.name + '” removed — the panels on screen are untouched');
 }
 
@@ -4215,16 +4635,22 @@ function removePreset() {
    is that task's default cluster that comes back, not the checklist's. */
 function resetLayout() {
   pushUndo();
-  const m = layoutMeta[s.mode] || { sig: '', intent: '', task: '' };
+  const m = layoutMeta[s.mode] || { sig: '', intent: '', task: '', slot: '' };
   const task = m.task && TASK_BY_KEY[m.task] ? m.task : '';
+  const sv = m.saved ? savedOf(WS + m.saved) : null;
   if (!task) s.task = '';
   layouts[s.mode] = { version: 1,
-    root: task ? taskRoot(task) : presetForIntent(m.sig, m.intent, intentOverrides[m.intent]) };
+    root: sv ? freshSaved(sv)
+        : task ? taskRoot(task)
+        : m.landing ? landingRoot()
+        : presetForIntent(m.sig, m.intent, intentOverrides[m.intent]) };
   normalize(s.mode);
   syncGuide();
-  try { localStorage.removeItem(LSK + m.sig + '|' + m.intent + '|' + (m.task || '')); } catch (e) {}
+  try { localStorage.removeItem(LSK + m.sig + '|' + m.intent + '|' + (m.slot || '')); } catch (e) {}
   maximizedId.value = null;
-  announce(task ? TASK_BY_KEY[task].label + ' put back to its default panels'
+  announce(sv ? '“' + sv.name + '” put back to the panels you saved under that name'
+         : task ? TASK_BY_KEY[task].label + ' put back to its default panels'
+         : m.landing ? 'Back to the empty landing'
                 : 'Layout reset to the cluster this checklist calls up');
 }
 
@@ -4454,7 +4880,11 @@ function endCorner() {
 
 function toggleMax() {
   if (maximizedId.value) { maximizedId.value = null; announce('Restored layout'); }
-  else if (hoverArea.value) { maximizedId.value = hoverArea.value; announce('Maximised — Ctrl+Space to restore'); }
+  /* `hoverArea` is the last panel a pointer entered and it is not cleared on the
+     way out, so it can name a panel in a workspace you have since left — or one
+     you have since closed, which an empty workspace makes easy. Maximising an id
+     the current tree does not hold hides every panel and looks like a crash. */
+  else if (hoverArea.value && findNode(hoverArea.value)) { maximizedId.value = hoverArea.value; announce('Maximised — Ctrl+Space to restore'); }
 }
 window.addEventListener('keydown', (e) => {
   const tag = (e.target && e.target.tagName) || '';
@@ -4589,6 +5019,8 @@ const SB = {
   /* the 2026-08-17 model: the take state ramp */
   takeState, takeStamp, TAKE_STATE, standDown,
   forkTake, doFork, askGoLive, doGoLive, askDeleteProd, renameTake,
+  PROPOSALS, proposalOf, canApprove, approversFor, proposeBaseline, approveBaseline, rejectBaseline,
+  pendingForMe, approvalAside, rejectNote, ACCESS_BY,
   renameProd, renaming, renameDraft, renameEl, startRename, commitRename,
   draftItems, draftPanels, draftObjCount, draftLeafCount, panelsFor, resetAll,
   xyzLabels, xyzSlot, calLabels, toast, worldPosOf,
@@ -4611,6 +5043,8 @@ const SB = {
   TASKS, applyTask, countAreas,
   makeBaseline,
   layouts, areaList, liveAreas, areaShown, gutterList, gesture, maximizedId, hoverArea, menuFor, tileEl,
+  /* the empty landing and the two ways off it */
+  emptyWorkspace, drawBox, startDraw, firstPanel, railPulse, pulseTasks,
   makeMember, dropMember, memberOf, memberName, initialsOf, affectedBy,
   ACCESS, hasAccess,
   /* WHO YOU ARE, in the header. It lives in history.js because that is what
@@ -4808,6 +5242,124 @@ function useSceneTool(mode) {
     if (w) w.postMessage(m, '*');
   };
 
+  /* ---- EVERYTHING THIS TAKE ALREADY HAS, SAID AGAIN ----
+     Lifted out of `case 'ready'`, which used to be its only caller — and that was the
+     bug underneath "a fork opens with an empty timeline". A tool iframe is NOT
+     re-created when the take changes under it: panels stay mounted across workspaces
+     and across takes, and only `scene` is re-sent. So everything below arrived once,
+     for whichever take was open when that panel booted, and never again. Switch take
+     and the Timeline kept the cues of the take you left, the Bin kept its files and
+     went on calling them IN SHOW, and a fork you had just made looked empty because
+     nothing had ever been replayed into it.
+     Two callers now: the panel saying hello, and the take changing under a panel that
+     will never say it again. See the watch beside `sceneMsg`. */
+  function replayTake(t) {
+    /* a panel opened after the light was set opens under that light */
+    if (t && LOOK_BY_TAKE.has(t.id)) send({ v: BRIDGE_V, type: 'look', look: LOOK_BY_TAKE.get(t.id) });
+    /* a panel opened after somebody imported a venue, or loaded a clip,
+       still gets the venue and the clips */
+    if (t && GLB_ASSETS.has(t.id)) {
+      const a = GLB_ASSETS.get(t.id);
+      send({ v: BRIDGE_V, type: 'venueAsset', name: a.name, bytes: a.bytes });
+    }
+    /* and everything standing IN that venue. After the venue deliberately: an
+       import is placed on the floor of the room, and restoring one into a room
+       that has not arrived yet puts it on the default ground plane. */
+    if (t && (mode === 'scene' || mode === 'pov') && importsOf(t.id).size) {
+      send({ v: BRIDGE_V, type: 'importAssets', items: importReplay(t.id) });
+    }
+    /* v5.9.2 · AND WHICH SCREENS ARE ONE CANVAS.
+       The host has stored these since v5.8 and only ever forwarded them to the
+       Sketch Pad. Nothing sent them back, so a room re-created by a task button
+       came up with no canvases at all — three linked walls became three walls,
+       and a clip routed at the canvas had a route naming something that no longer
+       existed, which is a dark LED and a cue that looks lost.
+
+       Sent EMPTY IF EMPTY, and before the media: a `clips` row routed at
+       `ledlink-2` needs `ledlink-2` to exist before it can be resolved, and the
+       empty send is what tells a booting room it may start publishing its own —
+       see `linksSettled` in the tool. */
+    if (t && (mode === 'scene' || mode === 'pov')) {
+      send({ v: BRIDGE_V, type: 'ledLinks', links: roomOf(t.id).links || [] });
+    }
+    /* v5.9 · THE GROUPING GOES FIRST, AND IT ALWAYS GOES.
+       A panel that has just opened cannot know whether a replay is coming, and
+       it must not guess: the Sequencing Timeline builds a default SEQUENCE 1 if
+       there is nothing to restore, and building it a moment too early swallows
+       every real sequence in the take. It used to guess on a 700 ms timer, which
+       is fine on a take with two small clips and hopeless on one with four
+       masters — the assets below are ArrayBuffers, they are posted before this
+       was, and structured-cloning tens of megabytes takes longer than the timer.
+       Reloading the panel then silently collapsed six cues into one.
+
+       So the answer is sent unconditionally, EMPTY IF EMPTY, and it is sent
+       BEFORE the bytes. "There is no grouping" is an answer; silence is not. */
+    if (t && (mode === 'timeline' || mode === 'preview' || mode === 'bin')) {
+      const seq = SEQ_BY_TAKE.get(t.id) || { clips: [], sequences: [], cur: null };
+      /* v5.9.10 · AND WHETHER THIS TAKE HAS EVER BEEN SEQUENCED AT ALL. An empty list
+         of cues means two opposite things — nobody has started, or somebody deleted
+         the last one — and only the take knows which. Without this the Timeline put
+         SEQUENCE 1 back every time it reopened, which made the last cue the one cue
+         you could not delete. */
+      send({ v: BRIDGE_V, type: 'clips', clips: seq.clips,
+             sequences: seq.sequences, cur: seq.cur,
+             sequenced: SEQ_BY_TAKE.has(t.id), replay: true });
+    }
+    /* v5.9.10 · KEYED BY CLIP, NOT BY LANE. A video lane holds several clips one
+       after another now, so "the file on that track" stopped being a single thing.
+       The first clip on a lane is still stored under the LANE'S id — which is what
+       every message meant before — so nothing already in a take needs migrating and
+       an older panel replaying still finds its file. */
+    if (t) mediaFor(t.id).forEach((a, clipId) =>
+      send({ v: BRIDGE_V, type: 'mediaAsset', clipId,
+             trackId: a.trackId || clipId, name: a.name,
+             kind: a.kind || 'video', bytes: a.bytes }));
+    /* and the rows nobody has put on a lane yet, which are content this production has
+       loaded just as much as the ones that are in a cue. Bin only: a `binAsset` names no
+       track, so it is inventory and nothing else — see `BIN_BY_TAKE`. */
+    if (t && mode === 'bin') binFor(t.id).forEach((a, assetId) =>
+      send({ v: BRIDGE_V, type: 'binAsset', assetId, name: a.name,
+             kind: a.kind || 'video', bytes: a.bytes }));
+    /* v5.9 · AND THE CUT IT IS PART OF. The bytes above say what the files ARE;
+       these two say where they sit and what they are thrown at. Sent after the
+       assets deliberately — a `clips` row naming a track whose file has not
+       arrived is a position with nothing to position — and both are replays of
+       what another panel authored, never a second opinion.
+
+       This is the bug the Sketch Pad's `scene` replay was written to fix,
+       arriving in the media half: a panel that opened after the work was done
+       heard nothing, and looked like the work had not been done. */
+    /* and AGAIN after the bytes, because a `clips` row positions a clip and the
+       clip only exists once its file has arrived. The first copy settles the
+       grouping; this one lands the positions on it. */
+    if (t && SEQ_BY_TAKE.has(t.id)) {
+      const seq = SEQ_BY_TAKE.get(t.id);
+      send({ v: BRIDGE_V, type: 'clips', clips: seq.clips, sequences: seq.sequences,
+             cur: seq.cur, sequenced: true, replay: true });
+    }
+    if (t && TARGETS_BY_TAKE.has(t.id)) send({ v: BRIDGE_V, type: 'routeTargets', targets: TARGETS_BY_TAKE.get(t.id) });
+    /* v5.9.10 · AND ANY CUE SOMEBODY ASKED FOR WHILE THIS PANEL WAS SHUT. A clip
+       dropped on a wall in the room wants a cue on that wall, and only this panel can
+       make one — so the request waited. See `claimCue`. */
+    if (t && mode === 'timeline') sendCueClaims(t, { send });
+    /* WHERE THE PLAYHEAD WAS — but PAUSED, whatever it was doing.
+       The clock lives in the Sequencing Timeline, and if that panel is not open
+       nothing is advancing this: replaying `playing: true` into a room with no
+       clock would set it running free, on its own frame loop, away from every
+       other panel. So the position is restored and the running is not. A Timeline
+       that IS open and playing beats every 1.5 s and picks the room back up. */
+    if (t && TRANSPORT_BY_TAKE.has(t.id)) {
+      send(Object.assign({}, TRANSPORT_BY_TAKE.get(t.id),
+                         { v: BRIDGE_V, type: 'transport', playing: false, replay: true }));
+    }
+    /* and the room is asked to say the surfaces again, in case it is open and
+       has built one since — the same nudge `sendRoom` gives for `objectFaces` */
+    if (t && (mode === 'timeline' || mode === 'preview' || mode === 'bin')) {
+      [...TOOL_SENDERS].filter(x => x.mode === 'scene' && x.takeId() === t.id)
+        .forEach(x => x.send({ v: BRIDGE_V, type: 'resync' }));
+    }
+  }
+
   const onMessage = (e) => {
     if (!frame.value || e.source !== frame.value.contentWindow) return;
     const d = e.data;
@@ -4817,104 +5369,7 @@ function useSceneTool(mode) {
       case 'ready':
         live = true; state.value = 'live';
         send(helloMsg(mode)); send(plain(sceneMsg(t)));
-        /* a panel opened after the light was set opens under that light */
-        if (t && LOOK_BY_TAKE.has(t.id)) send({ v: BRIDGE_V, type: 'look', look: LOOK_BY_TAKE.get(t.id) });
-        /* a panel opened after somebody imported a venue, or loaded a clip,
-           still gets the venue and the clips */
-        if (t && GLB_ASSETS.has(t.id)) {
-          const a = GLB_ASSETS.get(t.id);
-          send({ v: BRIDGE_V, type: 'venueAsset', name: a.name, bytes: a.bytes });
-        }
-        /* and everything standing IN that venue. After the venue deliberately: an
-           import is placed on the floor of the room, and restoring one into a room
-           that has not arrived yet puts it on the default ground plane. */
-        if (t && (mode === 'scene' || mode === 'pov') && importsOf(t.id).size) {
-          send({ v: BRIDGE_V, type: 'importAssets', items: importReplay(t.id) });
-        }
-        /* v5.9.2 · AND WHICH SCREENS ARE ONE CANVAS.
-           The host has stored these since v5.8 and only ever forwarded them to the
-           Sketch Pad. Nothing sent them back, so a room re-created by a task button
-           came up with no canvases at all — three linked walls became three walls,
-           and a clip routed at the canvas had a route naming something that no longer
-           existed, which is a dark LED and a cue that looks lost.
-
-           Sent EMPTY IF EMPTY, and before the media: a `clips` row routed at
-           `ledlink-2` needs `ledlink-2` to exist before it can be resolved, and the
-           empty send is what tells a booting room it may start publishing its own —
-           see `linksSettled` in the tool. */
-        if (t && (mode === 'scene' || mode === 'pov')) {
-          send({ v: BRIDGE_V, type: 'ledLinks', links: roomOf(t.id).links || [] });
-        }
-        /* v5.9 · THE GROUPING GOES FIRST, AND IT ALWAYS GOES.
-           A panel that has just opened cannot know whether a replay is coming, and
-           it must not guess: the Sequencing Timeline builds a default SEQUENCE 1 if
-           there is nothing to restore, and building it a moment too early swallows
-           every real sequence in the take. It used to guess on a 700 ms timer, which
-           is fine on a take with two small clips and hopeless on one with four
-           masters — the assets below are ArrayBuffers, they are posted before this
-           was, and structured-cloning tens of megabytes takes longer than the timer.
-           Reloading the panel then silently collapsed six cues into one.
-
-           So the answer is sent unconditionally, EMPTY IF EMPTY, and it is sent
-           BEFORE the bytes. "There is no grouping" is an answer; silence is not. */
-        if (t && (mode === 'timeline' || mode === 'preview' || mode === 'bin')) {
-          const seq = SEQ_BY_TAKE.get(t.id) || { clips: [], sequences: [], cur: null };
-          /* v5.9.10 · AND WHETHER THIS TAKE HAS EVER BEEN SEQUENCED AT ALL. An empty list
-             of cues means two opposite things — nobody has started, or somebody deleted
-             the last one — and only the take knows which. Without this the Timeline put
-             SEQUENCE 1 back every time it reopened, which made the last cue the one cue
-             you could not delete. */
-          send({ v: BRIDGE_V, type: 'clips', clips: seq.clips,
-                 sequences: seq.sequences, cur: seq.cur,
-                 sequenced: SEQ_BY_TAKE.has(t.id), replay: true });
-        }
-        /* v5.9.10 · KEYED BY CLIP, NOT BY LANE. A video lane holds several clips one
-           after another now, so "the file on that track" stopped being a single thing.
-           The first clip on a lane is still stored under the LANE'S id — which is what
-           every message meant before — so nothing already in a take needs migrating and
-           an older panel replaying still finds its file. */
-        if (t) mediaFor(t.id).forEach((a, clipId) =>
-          send({ v: BRIDGE_V, type: 'mediaAsset', clipId,
-                 trackId: a.trackId || clipId, name: a.name,
-                 kind: a.kind || 'video', bytes: a.bytes }));
-        /* v5.9 · AND THE CUT IT IS PART OF. The bytes above say what the files ARE;
-           these two say where they sit and what they are thrown at. Sent after the
-           assets deliberately — a `clips` row naming a track whose file has not
-           arrived is a position with nothing to position — and both are replays of
-           what another panel authored, never a second opinion.
-
-           This is the bug the Sketch Pad's `scene` replay was written to fix,
-           arriving in the media half: a panel that opened after the work was done
-           heard nothing, and looked like the work had not been done. */
-        /* and AGAIN after the bytes, because a `clips` row positions a clip and the
-           clip only exists once its file has arrived. The first copy settles the
-           grouping; this one lands the positions on it. */
-        if (t && SEQ_BY_TAKE.has(t.id)) {
-          const seq = SEQ_BY_TAKE.get(t.id);
-          send({ v: BRIDGE_V, type: 'clips', clips: seq.clips, sequences: seq.sequences,
-                 cur: seq.cur, sequenced: true, replay: true });
-        }
-        if (t && TARGETS_BY_TAKE.has(t.id)) send({ v: BRIDGE_V, type: 'routeTargets', targets: TARGETS_BY_TAKE.get(t.id) });
-        /* v5.9.10 · AND ANY CUE SOMEBODY ASKED FOR WHILE THIS PANEL WAS SHUT. A clip
-           dropped on a wall in the room wants a cue on that wall, and only this panel can
-           make one — so the request waited. See `claimCue`. */
-        if (t && mode === 'timeline') sendCueClaims(t, { send });
-        /* WHERE THE PLAYHEAD WAS — but PAUSED, whatever it was doing.
-           The clock lives in the Sequencing Timeline, and if that panel is not open
-           nothing is advancing this: replaying `playing: true` into a room with no
-           clock would set it running free, on its own frame loop, away from every
-           other panel. So the position is restored and the running is not. A Timeline
-           that IS open and playing beats every 1.5 s and picks the room back up. */
-        if (t && TRANSPORT_BY_TAKE.has(t.id)) {
-          send(Object.assign({}, TRANSPORT_BY_TAKE.get(t.id),
-                             { v: BRIDGE_V, type: 'transport', playing: false, replay: true }));
-        }
-        /* and the room is asked to say the surfaces again, in case it is open and
-           has built one since — the same nudge `sendRoom` gives for `objectFaces` */
-        if (t && (mode === 'timeline' || mode === 'preview' || mode === 'bin')) {
-          [...TOOL_SENDERS].filter(x => x.mode === 'scene' && x.takeId() === t.id)
-            .forEach(x => x.send({ v: BRIDGE_V, type: 'resync' }));
-        }
+        replayTake(t);
         break;
 
       /* ---- these five go through the mutators the rest of the app already
@@ -5327,6 +5782,21 @@ function useSceneTool(mode) {
               + (dest ? ' → ' + dest.label + ' · new cue' : ' — no destination yet'));
         break;
       }
+      /* v6.0.1 · A FILE THE BIN OPENED. Everything else the bin holds came FROM here;
+         this is the one direction that did not exist, and without it a file somebody
+         loaded was never the production's — see `BIN_BY_TAKE`. Held, then said to every
+         other bin on this take so two of them never show different shelves. */
+      case 'binAsset': {
+        if (!t || !d.assetId || !d.bytes || !d.name) break;
+        const shelf = binFor(t.id);
+        if (!shelf.has(d.assetId)) {
+          shelf.set(d.assetId, { id: d.assetId, name: d.name, kind: d.kind || 'video',
+                                 bytes: d.bytes, size: d.bytes.byteLength });
+        }
+        shareAsset(t.id, me, { type: 'binAsset', assetId: d.assetId, name: d.name,
+                               kind: d.kind || 'video', bytes: d.bytes });
+        break;
+      }
       case 'binRequest': {
         if (!t) break;
         /* v5.9.3 · THE HOST CAN BE THE HOLDER TOO. A frame dragged out of the Aiden
@@ -5412,6 +5882,16 @@ function useSceneTool(mode) {
      That is exactly how it presented — an empty viewport after an accept, with a
      take full of devices — and it would have hit any hand-aimed device too. */
   watch(() => sceneMsg(T.value), (m) => { if (live) send(plain(m)); }, { deep: true });
+  /* AND THE TAKE CHANGING IS NOT THE SAME EVENT AS THE SCENE CHANGING. The watch above
+     re-projects the take a panel is looking at; this one says the panel is looking at a
+     DIFFERENT take, which means everything the host is holding for it has to be said
+     again — see `replayTake`.
+     Declared after that watch on purpose. Both fire in the same flush, in the order they
+     were created, and the replay must land on a panel that has already been told which
+     take it is for: the Timeline drops clips whose track the take does not have, and a
+     `clips` replay arriving before its `scene` would be judged against the tracks of the
+     take you just left. */
+  watch(() => (T.value ? T.value.id : null), (id) => { if (live && id) replayTake(T.value); });
 
   return { ...ctx, frame, state, toolSrc, stamp, reload,
            sceneArm: (req, model) => send({ v: BRIDGE_V, type: 'arm', req, model }) };
@@ -5558,7 +6038,15 @@ function genEstimate(kind, frames, spf, spi) {
 }
 const GEN_ASSETS = new Map();            // takeId -> Map(assetId -> asset)
 const GEN_REV = reactive({ n: 0 });
+/* THE NUMBER THE NEXT FRAME WILL BE. It is handed out by a function rather than
+   exported as a counter because a panel is a SEPARATE MODULE, and an imported
+   binding cannot be assigned to: `++genSeq` over there throws, which is exactly
+   what it did — silently, after the frame had already been generated, so the
+   service did a minute of work and the panel dropped it on the floor.
+   It is also the diffusion SEED, so the id a frame is filed under and the seed it
+   was drawn with are the same number by construction rather than by luck. */
 let genSeq = 0;
+const nextGenSeq = () => ++genSeq;
 function genFor(takeId) {
   if (!GEN_ASSETS.has(takeId)) GEN_ASSETS.set(takeId, new Map());
   return GEN_ASSETS.get(takeId);
@@ -5588,8 +6076,63 @@ function mediaFor(takeId) {
                    derived from geometry no other panel holds. Replayed exactly
                    the way `objectFaces` is, and for the identical reason: without
                    it a Timeline that opened first can only offer an empty menu. */
+/* v6.0.1 · WHAT IS IN THE BIN, HELD WHERE EVERY PANEL CAN SEE IT.
+   The Content Bin had two kinds of row and only one of them existed outside the panel.
+   A file already on a track arrived as a `mediaAsset` the host was holding anyway; a
+   file somebody OPENED in the bin lived in that iframe's own Map and nowhere else. So
+   it was not content the production had — it was content one panel remembered. Close
+   the panel, let its workspace fall out of the four kept alive, or fork the take, and
+   everything anybody had loaded was simply gone, for everyone.
+   The bin now tells the host what it takes in (`binAsset`), the host holds it per take
+   like every other asset here, and `replayTake` gives it back — to the same panel after
+   a remount, to a second bin opened beside it, and to a fork. Same contract as
+   `MEDIA_ASSETS`: the host holds the bytes, the take holds nothing heavy. */
+const BIN_BY_TAKE = new Map();           // takeId -> Map(assetId -> { id, name, kind, bytes, size })
+function binFor(takeId) {
+  if (!BIN_BY_TAKE.has(takeId)) BIN_BY_TAKE.set(takeId, new Map());
+  return BIN_BY_TAKE.get(takeId);
+}
 const SEQ_BY_TAKE = new Map();           // takeId -> { clips[], sequences[], cur }
 const TARGETS_BY_TAKE = new Map();       // takeId -> [{ id, label, req, note }]
+/* ---- THE MEDIA HALF OF A FORK ----
+   `doFork` carries every decision in the take and none of this, because none of this is
+   IN the take: the files, the bin's inventory and the cues on them are held out here on
+   purpose (a take is deep-watched, and a 40 MB master inside one would be re-projected
+   on every keystroke — see `MEDIA_ASSETS`). The effect was that forking a take you had
+   spent an afternoon loading and cueing gave you an empty Content Bin and an empty
+   Timeline, and the note above `copy.view` promising the fork "opens looking exactly
+   like the take it came from" was true of the room and false of the show.
+
+   THE BYTES ARE SHARED, NOT COPIED, and that is the whole reason this is cheap enough
+   to do on every fork. An ArrayBuffer here is only ever read — posted to a panel by
+   structured clone, never transferred and never written — so two takes naming the same
+   buffer is two takes naming the same file, which is what they are. Only the little
+   record around each one is copied, so renaming or re-routing a clip in the fork cannot
+   reach back into its parent.
+
+   WHAT DOES NOT TRAVEL is progress, exactly as in `doFork`: a fork inherits the content
+   and the cut, not the sign-off on them. */
+function forkMedia(fromId, toId) {
+  const shelf = (store) => {
+    const m = store.get(fromId);
+    if (m && m.size) store.set(toId, new Map([...m].map(([k, v]) => [k, { ...v }])));
+  };
+  shelf(MEDIA_ASSETS);     // the files on the lanes
+  shelf(BIN_BY_TAKE);      // and the ones only loaded, which are inventory just the same
+  shelf(GEN_ASSETS);       // including anything AID3N drew into this take
+  const seq = SEQ_BY_TAKE.get(fromId);
+  if (seq) SEQ_BY_TAKE.set(toId, { clips: (seq.clips || []).map(c => ({ ...c })),
+                                   sequences: JSON.parse(JSON.stringify(seq.sequences || [])),
+                                   cur: seq.cur || null });
+  /* the surfaces a cue is thrown at. The Scene Study re-derives these the moment it
+     opens on the fork — the solids were copied — but a Timeline that opens FIRST would
+     otherwise show every forked cue routed at a target that does not exist yet. */
+  if (TARGETS_BY_TAKE.has(fromId))
+    TARGETS_BY_TAKE.set(toId, TARGETS_BY_TAKE.get(fromId).map(x => ({ ...x })));
+  /* and where the playhead was, for the same reason `copy.view` travels */
+  if (TRANSPORT_BY_TAKE.has(fromId))
+    TRANSPORT_BY_TAKE.set(toId, { ...TRANSPORT_BY_TAKE.get(fromId), playing: false });
+}
 /* the same fan-out the venue uses: a clip loaded in one panel has to be
    playable in every panel of that take, and a blob URL cannot cross a document */
 /* ---- v5.9.5 · LANDING A HELD ASSET ON A TRACK — one door, two callers ----
@@ -6360,7 +6903,25 @@ function agentApplyOp(t, op, idmap) {
     const r = agentApplyOpInner(t, op, idmap);
     if (r) {
       const [verb, what, final] = logged(op);
-      record('op', { ...histCtx(t), obj: op.objId || null, note: verb, to: what, final: !!final });
+      /* A DRAWN LED WALL NAMES ITS DOMAIN. Scene ops carry no checklist step, so
+         nothing about this record said which desk it belonged to — and drawing the
+         wall then sat apart from the cabinet it was given a moment later, because
+         the two disagreed about the task. `led.shape` is not a checklist step and
+         does not pretend to be; it is the same "requirement.thing" shape every step
+         id has, which is all the routing and the grouping ever read. */
+      const step = (op.kind === 'solid' && op.role === 'led') ? 'led.shape' : null;
+      /* AND ITS NAME, not the role it was sent with. `nameLeds` runs inside the
+         apply and is what turns a drawn surface into LED 2 — reading the name off
+         the incoming op instead gave the log "built led", which names the
+         category and not the thing. Looked up after the fact, because the name
+         does not exist until the solid does. */
+      let what2 = what;
+      if (op.kind === 'solid') {
+        const sol = op.srcId ? (t.solids || []).find(x => String(x.srcId || '') === String(op.srcId))
+                             : (t.solids || [])[t.solids.length - 1];
+        if (sol && sol.name) what2 = sol.name;
+      }
+      record('op', { ...histCtx(t), obj: op.objId || null, step, note: verb, to: what2, final: !!final });
     }
     return r;
   }
@@ -6477,11 +7038,14 @@ function agentApplyOpInner(t, op, idmap) {
         sol.scale = same ? [1, 1, 1] : prevSc.slice();
         t.solids.splice(was, 1, sol);
         nameLeds(t);
+        ensureLedTile(t, sol);
         return true;
       }
       sol.id = 'sol-' + (++solidSeq);
       t.solids.push(sol);
       nameLeds(t);
+      /* after `nameLeds`, so the entry in the log names the wall rather than its id */
+      ensureLedTile(t, sol);
       return true;
     }
     /* the drawing, at the size it was drawn */
@@ -7102,7 +7666,15 @@ const tileRow = (name) => TILE_LIB.find(r => r.name === name) || null;
    a tile here re-tiles the wall in both of them, and the count comes back. */
 const TILE_PICK = reactive({});       // takeId::solidId -> tile name
 const tileKey = (t, sol) => t.id + '::' + sol.id;
-const tileOfSolid = (t, sol) => (t && sol) ? tileRow(TILE_PICK[tileKey(t, sol)]) : null;
+/* `sol.tile` FIRST, and the pick map second. Both are written together by
+   `applyTileTo`, so they only ever disagree after a RESTORE: the solid is part
+   of the take and comes back with it, while TILE_PICK lives beside the take and
+   does not. Reading the pick map first meant going back to a change put the
+   wall's geometry back and left the old tile name on it — the log offering a
+   way back that silently did not apply to the one spec this panel is for. */
+const tileOfSolid = (t, sol) => (t && sol)
+  ? (tileRow(sol.tile && sol.tile.name) || tileRow(TILE_PICK[tileKey(t, sol)]))
+  : null;
 /* WHICH TILE THE PREVIEW IS SHOWING — computed once here rather than twice in two
    components, because "the two panels disagree" is precisely the bug this is fixing and
    two copies of the rule is how it would come back. Order matters: a tile chosen by hand
@@ -7119,6 +7691,17 @@ function shownTileName(t) {
 const MM_DM = 100;
 function applyTileTo(t, sol, row) {
   if (!t || !sol || !row) return false;
+  /* THE ONE SPEC DECISION THE LOG COULD NOT SEE. Re-speccing a projector goes
+     through `setValue` and is recorded with it; a tile went through here and was
+     recorded nowhere — even though it is the decision in this workspace with the
+     LARGEST arm on the money. A wall is priced per tile, so swapping the tile
+     re-prices the wall, re-weighs it and re-draws its power, and none of that
+     had an author, a time or a reason attached to it.
+
+     Read BEFORE the write and recorded AFTER it: `from` has to come off the take
+     as it stands, and `record` diffs the figures as they are once the decision
+     has landed. */
+  const was = (tileOfSolid(t, sol) || {}).name || null;
   TILE_PICK[tileKey(t, sol)] = row.name;
   /* v5.9.9 · AND THE PIXELS, because the room draws the test pattern and the test pattern
      has to say what resolution the surface actually is. The cabinet's physical size was
@@ -7126,7 +7709,28 @@ function applyTileTo(t, sol, row) {
      too, and this is the one place a tile is chosen. */
   sol.tile = { w: +(row.w / MM_DM).toFixed(2), h: +(row.h / MM_DM).toFixed(2),
                pw: row.pw, ph: row.ph, name: row.name };
+  /* `led.tile` is not a checklist step and does not need to be: a step id names
+     its requirement in its first segment, which is how this change finds the LED
+     desk by name rather than only through the figures it happens to move. */
+  if (was !== row.name) record('value', { ...histCtx(t), obj: sol.id, step: 'led.tile',
+                                          note: sol.name || 'LED', from: was, to: row.name });
   return true;
+}
+/* EVERY DRAWN WALL IS MADE OF SOMETHING. A wall with no cabinet chosen priced at
+   nothing, weighed nothing and drew no power — so drawing the largest object in
+   the room moved not one figure in the production, and its first honest number
+   appeared only if somebody happened to open the tile list. The default cabinet
+   is assigned the moment the wall exists and RECORDED like the spec decision it
+   is, so the log carries the wall's value from the start and a later swap reads
+   as what it is: the same decision, made again.
+
+   Assigned only when the wall has none. A rebuild from the pad keeps the tile it
+   was given (see `case 'solid'`), so pressing BUILD 3D again never quietly puts
+   a chosen cabinet back to the default. */
+function ensureLedTile(t, sol) {
+  if (!t || !sol || sol.role !== 'led') return;
+  if (tileOfSolid(t, sol)) return;
+  applyTileTo(t, sol, tileRow(TILE_DEFAULT));
 }
 const ledSolids = (t) => !t ? [] : (t.solids || []).filter(x => x.role === 'led');
 const builtRow = (t, id) => (((t && t.derived && t.derived.builtGeometry && t.derived.builtGeometry.rows) || [])
@@ -7246,10 +7850,11 @@ export {
   cleanupDrag, closeArea, commit, commitRename, compareTakes, computePromotion, computed, conceptList,
   confirmDelete, confirmDeleteProd, costOf, countAreas, createApp, createProduction, csize, dayLabel,
   daysLeft, decisionCount, defaultWiring, depBlocked, dialog, djb2, doFork, doGoLive,
+  PROPOSALS, proposalOf, canApprove, approversFor, proposeBaseline, approveBaseline, rejectBaseline,
   doSavePreset, draftItems, draftLeafCount, draftObjCount, draftPanels, draftSpan, duplicateObject, eligibleJoins,
   endCorner, endResize, ensureAgentPanel, ensureItem, ensureLayout, equalize, estimateLed, evenW,
   fanOutSolidSelection, feedBandwidth, findNode, flownOf, focusObj, focusObjects, focusReq, focusStep,
-  focusSteps, forkTake, genEstimate, genFor, genSeq, gesture, ghostTimer, grossWeight,
+  focusSteps, forkTake, genEstimate, genFor, gesture, ghostTimer, grossWeight,
   gutterKey, gutterList, healPorts, healWiring, helloMsg, hoverArea, importReplay, importsOf,
   inMetres, inScene, inferIntent, inject, intentDeclined, intentLabel, intentOverrides, intentSig,
   invalidateDownstream, isBound, isLive, isMin, isTaskPanel, isTypical, iso, joinAreas,
@@ -7262,7 +7867,7 @@ export {
   restoreToChange, snapshotTake,
   minList, minSize, mixTok, mkArea, mkSplit, modalBack, modeOrder, money,
   moveCorner, moveObject, moveResize, nameLeds, namesOf, nearestM, newMember, newProduction,
-  newSketch, nextTick, nid, normalize, num, objPct, objsOfStep, onBeforeUnmount,
+  newSketch, nextGenSeq, nextTick, nid, normalize, num, objPct, objsOfStep, onBeforeUnmount,
   onDragMove, onDragUp, onMounted, openProd, openTake, outlineLenDm, outputsOf, panelCtx,
   panelSolids, panelsBusy, panelsFor, panelsOf, panelsResult, parseISO, pctDone, persist,
   phaseSpread, pickProfile, pixOf, pixelsOf, placeAssetOn, plain, posOf, powerDraw,
@@ -7274,7 +7879,7 @@ export {
   roomOf, routeDestinations, s, sanitiseSolid, savePresets, sceneMsg, seed, seedAlt,
   seedProd, selObjO, selStep, sendCueClaims, setCursor, setGuide, setIntent, setReq,
   setStepDeadline, setValue, setValueAll, settleCueClaims, shareAsset, shareGlb, shownTileName, sigOf,
-  signalLoad, sketchGhostClear, sketchGhosting, sketchInventoryByTake, sketchRoot, sketching, solidSeq, solveNode,
+  signalLoad, sketchGhostClear, sketchGhosting, sketchInventoryByTake, sketching, solidSeq, solveNode,
   spanDays, splitArea, splitLineStyle, srcNote, stOf, standDown, startProduction, startRename,
   startResize, startSwap, stepPct, stripIds, swap, swapAreas, swapPanels, syncGuide,
   take, takeDone, takeFails, takeName, takePct, takeSeq, takeStamp, takeState,
